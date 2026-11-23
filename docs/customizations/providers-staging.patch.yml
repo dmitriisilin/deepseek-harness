@@ -22,3 +22,12 @@
         reasoning: medium
         models:
           - id: claude-opus-5-5
+- id: llm-deepseek
+  config:
+    models:
+      - id: deepseek-flash
+        name: DeepSeek-V4.1-Flash
+        contextWindow: 1048576
+        inputModalities: [text, image]
+        systemPromptUpdate: in-history
+        toolUpdate: addition-only

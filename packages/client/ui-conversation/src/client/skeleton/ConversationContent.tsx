@@ -108,7 +108,7 @@ export function ConversationContent(props: ConversationContentProps) {
     ? undefined
     : workspaceDisplayTitle(storedChipTitle, t('workspace.defaultName'))
 
-  const quickChat = aiControl && sessionId !== undefined && chipTitle === undefined
+  const quickChat = aiControl && chipTitle === undefined
   const heroWorkspaceRow = quickChat ? null : (
     <div className={css.heroWorkspaceRow}>
       <WorkspaceChip
@@ -152,9 +152,11 @@ export function ConversationContent(props: ConversationContentProps) {
     ...(inert
       ? {
         disabled: true,
-        placeholder: t('placeholder.workspace'),
-        workspacePickerOpen: pickerOpen,
-        onRequestWorkspace: () => { setPickerOpen(true) },
+        ...(quickChat ? { placeholder: t('placeholder.aiControl') } : {
+          placeholder: t('placeholder.workspace'),
+          workspacePickerOpen: pickerOpen,
+          onRequestWorkspace: () => { setPickerOpen(true) },
+        }),
       }
       : blocked
         // `blocked`, not `disabled`: the bar refuses input either way, but a

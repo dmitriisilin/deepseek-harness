@@ -169,7 +169,18 @@ it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('opens without a Worksp
   const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd, 'Рабочая область по умолчанию')
   const page = await browser.newPage({ viewport: { width: 360, height: 780 }, locale: 'ru-RU', isMobile: true, hasTouch: true })
   const initialCreate = page.waitForResponse('**/api/session/create')
-  await page.goto(scaffold.authenticatedUrl)
+  const openChat = Promise.withResolvers<undefined>()
+  await page.route('**/api/session/create', async (route) => {
+    await openChat.promise
+    await route.continue()
+  }, { times: 1 })
+  try {
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'domcontentloaded' })
+    await page.locator('[data-composer-input][data-placeholder="Напишите сообщение"]').waitFor()
+    expect(await page.getByText('Выберите рабочее пространство', { exact: true }).isVisible()).toBe(false)
+  } finally {
+    openChat.resolve(undefined)
+  }
   const created = await initialCreate
   const initial = await created.json()
   expect(initial.result.ok).toBe(true)
