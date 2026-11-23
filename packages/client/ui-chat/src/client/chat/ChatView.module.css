@@ -424,3 +424,9 @@
   margin: 0;
   width: max-content;
 }
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .scroll {
+    padding: 12px calc(var(--dsh-composer-side-clearance) + 8px);
+  }
+}

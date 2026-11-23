@@ -473,8 +473,7 @@
 
 @media (max-width: 600px) {
   :global(html[data-ai-control='red']) .input {
-    font-size: max(18px, var(--dsh-content-font-size, 14px));
-    min-height: 50px;
+    font-size: max(17px, var(--dsh-content-font-size, 14px));
   }
 
   :global(html[data-ai-control='red']) .primary,
@@ -490,6 +489,10 @@
 }
 
 @media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .root:not(.hero) .card {
+    gap: 8px;
+  }
+
   :global(html[data-ai-control='red']) .hero .input {
     min-height: 84px;
   }

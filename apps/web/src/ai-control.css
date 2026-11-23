@@ -1,6 +1,6 @@
 @media (max-width: 600px) {
   html[data-ai-control='red'] body:has(#root) {
-    --dsh-content-font-size: 19px !important;
+    --dsh-content-font-size: 17px !important;
   }
 }
 

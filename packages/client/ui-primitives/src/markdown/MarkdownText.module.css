@@ -509,3 +509,17 @@
 .markdown .fenceSeat :is(:global(.md-code-block), :global(.katex-display)) {
   margin-block: 0;
 }
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red'] [data-chat-flow]) .markdown {
+    line-height: 1.47;
+  }
+
+  :global(html[data-ai-control='red'] [data-chat-flow]) .markdown > :where(p, ul, ol) {
+    margin-block: 10px;
+  }
+
+  :global(html[data-ai-control='red'] [data-chat-flow]) .markdown li:not(:first-child) {
+    margin-top: 4px;
+  }
+}

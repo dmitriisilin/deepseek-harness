@@ -38,6 +38,11 @@ it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('shows the mobile chat 
         await menu.waitFor({ timeout: 15_000 })
         if (output) await page.screenshot({ path: join(output, `chat-${width}-${colorScheme}.png`), animations: 'disabled' })
         if (width < 600) {
+          const answer = page.getByText('DONE', { exact: true })
+          await answer.waitFor()
+          expect(await answer.evaluate(node => getComputedStyle(node).fontSize)).toBe('17px')
+          expect(await answer.evaluate(node => parseFloat(getComputedStyle(node).lineHeight))).toBeCloseTo(25, 0)
+          expect((await page.locator('[data-composer-input]').boundingBox())!.height).toBeLessThanOrEqual(40)
           expect(await page.locator('[data-conversation-tabs]').isVisible()).toBe(false)
           await menu.click()
           const trajectory = page.getByText('Trajectory', { exact: true })
