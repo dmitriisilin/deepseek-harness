@@ -22,6 +22,8 @@ export interface Config {
   defaultProvider: Volatile<string>
   /** Provider language hint selected when the caller omits one. */
   language: Volatile<string>
+  /** Profile vocabulary provided only to recognizers supporting hints. */
+  recognitionHints?: readonly string[]
 }
 
 interface Registration {
@@ -36,6 +38,7 @@ export default class SpeechToText extends Service {
   static Config = z.object({
     defaultProvider: z.string().min(1).required().volatile(),
     language: z.string().min(1).default('auto').volatile(),
+    recognitionHints: z.array(z.string().min(1).max(80)).max(32).default([]),
   })
 
   private readonly providers = new Map<SpeechProviderId, Registration>()
@@ -180,7 +183,9 @@ export default class SpeechToText extends Service {
   resolve(request: SpeechRequest): SpeechSpec {
     const id = request.providerId ?? this.config.defaultProvider.get() as SpeechProviderId
     const language = request.language ?? this.config.language.get()
-    return { provider: this.selectedProvider(id, language), audio: request.audio, language }
+    const provider = this.selectedProvider(id, language)
+    const hints = provider.info.supportsRecognitionHints === true ? this.config.recognitionHints : undefined
+    return { provider, audio: request.audio, language, ...(hints?.length ? { recognitionHints: [...hints] } : {}) }
   }
 
   /**
@@ -196,7 +201,8 @@ export default class SpeechToText extends Service {
     const combined = AbortSignal.any([signal, registration.lifetime.signal])
     const pending = Promise.resolve().then(() => {
       combined.throwIfAborted()
-      return spec.provider.transcribe({ audio: spec.audio, language: spec.language }, combined)
+      const { audio, language, recognitionHints } = spec
+      return spec.provider.transcribe({ audio, language, ...(recognitionHints === undefined ? {} : { recognitionHints }) }, combined)
     })
     registration.pending.add(pending)
     try {

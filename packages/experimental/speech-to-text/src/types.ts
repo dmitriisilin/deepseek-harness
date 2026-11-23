@@ -19,6 +19,8 @@ export interface SpeechProviderInfo {
   readonly location: 'host-local' | 'cloud'
   /** Accepted language hints, including automatic detection when supported. */
   readonly languages: readonly string[]
+  /** Provider can use literal terms as recognition hints. */
+  readonly supportsRecognitionHints?: true
   readonly setupEstimate?: SpeechSetupEstimate
   /** Origins offered for an explicit preparation download; omitted or empty when no choice applies. */
   readonly downloadSources?: readonly string[]
@@ -102,6 +104,7 @@ export interface SpeechPreparation {
 export interface SpeechInput {
   readonly audio: Uint8Array
   readonly language: string
+  readonly recognitionHints?: readonly string[]
 }
 
 /** Final transcription; an empty string means no speech was recognized. */

@@ -25,6 +25,7 @@ it.skipIf(webSnapshotMode() === 'record').each([false, true])('sends a recording
 - id: speech-to-text
   config:
     defaultProvider: whisper-local
+    recognitionHints: [DeepSeek, Opus]
 - id: speech-to-text-sensevoice
   disabled: true
 `)
@@ -33,12 +34,16 @@ it.skipIf(webSnapshotMode() === 'record').each([false, true])('sends a recording
   })
   onTestFinished(async () => { await scaffold.close() })
   const recognize = vi.fn(async (input: SpeechInput) => {
+    expect(input.recognitionHints).toEqual(mixed ? undefined : ['DeepSeek', 'Opus'])
     expect(Buffer.from(input.audio).subarray(0, 4).toString()).toBe('RIFF')
     return { text: 'Recorded locally', audioSeconds: 1, inferenceSeconds: 0.1 }
   })
   await scaffold.ctx.plugin({ inject: ['speechToText'], apply(ctx) {
     ctx.effect(() => ctx.speechToText.register({
-      info: { id: 'whisper-local' as SpeechProviderId, name: 'Test Whisper', location: 'host-local', languages: ['auto'] },
+      info: {
+        id: 'whisper-local' as SpeechProviderId, name: 'Test Whisper', location: 'host-local', languages: ['auto'],
+        ...(mixed ? {} : { supportsRecognitionHints: true }),
+      },
       transcribe: recognize,
     }))
   } })
