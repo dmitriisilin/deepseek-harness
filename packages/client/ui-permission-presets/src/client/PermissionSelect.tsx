@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  IconChevronDownOutlineRegular, Menu, PermissionIconAutoReviewRegular, PermissionIconFullAccessRegular,
+  IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, Menu, PermissionIconAutoReviewRegular, PermissionIconFullAccessRegular,
   PermissionIconReadOnlyRegular, PermissionIconWorkspaceWriteRegular, RiskConfirmation,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -75,7 +75,7 @@ export type PermissionSelectProps =
   & PropsLocale<typeof PERMISSION_ACCESS_NS>
 
 export function PermissionSelect({
-  locked, select, usePermissionCatalog, useProjection, t,
+  locked, select, usePermissionCatalog, useProjection, t, embedded,
 }: PermissionSelectProps) {
   const selection = useProjection('permissions')
   const catalog = usePermissionCatalog(state => state.value)
@@ -102,7 +102,7 @@ export function PermissionSelect({
     : permissionLabel(current.value, current.name, t)
   const busy = pick !== null || confirmation !== null
 
-  const items: MenuEntry[] = catalog.options.map((option) => {
+  const items: MenuItem[] = catalog.options.map((option) => {
     const icon = permissionGlyph(option.value)
     const label = permissionLabel(option.value, option.name, t)
     const badge = optionBadge(option.value, t)
@@ -163,7 +163,17 @@ export function PermissionSelect({
 
   return (
     <>
-      <Menu
+      {embedded ? <details className={css.aiControlPermission}>
+        <summary data-model-access-row aria-label={t('mode', { name: currentLabel })}>
+          <span data-model-access-label>{t('access')}</span>
+          <span data-model-access-value>{currentValue === 'workspace-write' ? t('workspace.short') : currentLabel}</span>
+          <IconChevronRightOutlineRegular data-model-access-chevron aria-hidden />
+        </summary>
+        {items.map(item => <button key={item.id} type="button" disabled={locked || busy}
+          aria-pressed={item.id === currentValue} onClick={() => { choose(item.id) }}>
+          {item.icon} {item.label}
+        </button>)}
+      </details> : <Menu
         open={open}
         items={items}
         selectedId={currentValue}
@@ -189,7 +199,7 @@ export function PermissionSelect({
             </span>
           </button>
         }
-      />
+      />}
       {confirmation !== null && (
         <RiskConfirmation
           open

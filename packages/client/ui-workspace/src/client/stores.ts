@@ -28,6 +28,8 @@ type WorkspaceViewState = {
   sessionOrderByAccount: Record<string, string[]>
   /** Archived-row visibility; omitted in pre-filter v5 snapshots and read as 'default'. */
   archivedFilter?: ArchivedFilter
+  aiControlProjectsCollapsed?: boolean
+  aiControlWorkspacePins?: string[]
 }
 
 type SessionOrderSource = {
@@ -66,6 +68,8 @@ type WorkspaceViewActions = {
     source: SessionOrderSource,
   ) => void
   setArchivedFilter: (draft: WorkspaceViewState, filter: ArchivedFilter) => void
+  setAiControlProjectsCollapsed: (draft: WorkspaceViewState, collapsed: boolean) => void
+  toggleAiControlWorkspacePin: (draft: WorkspaceViewState, key: string) => void
 }
 
 /** Copy read-only projections into the persisted mutable store representation. */
@@ -91,6 +95,11 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     persist: 'dsh.workspace.view.v5',
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
+      setAiControlProjectsCollapsed: (d, collapsed) => { d.aiControlProjectsCollapsed = collapsed },
+      toggleAiControlWorkspacePin: (d, key) => {
+        const pins = d.aiControlWorkspacePins ?? []
+        d.aiControlWorkspacePins = pins.includes(key) ? pins.filter(id => id !== key) : [...pins, key]
+      },
       setOrderBy: (d, mode: SessionOrderBy, initialOrders) => {
         if (mode === d.orderBy) return
         d.sessionOrderByAccount = mode === 'manual' ? copySessionOrders(initialOrders) : {}

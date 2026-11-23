@@ -37,7 +37,7 @@ import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular,
-  IconDataOutlineRegular, IconWarningOutlineRegular, Input, isMobileDevice, rankByName, StateDot, Tag, Toast,
+  IconDataOutlineRegular, IconEllipsisOutlineRegular, IconWarningOutlineRegular, Input, isMobileDevice, rankByName, StateDot, Tag, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelLabelOwner, ModelSelectInjected } from './slots.ts'
@@ -61,10 +61,11 @@ interface EffortChoice {
  * @returns the trigger and, while open, the two-level menu.
  */
 export function ModelSelect(
-  { locked, available, directory, load, select, resolveText, t, renderSlot }:
-  ModelSelectInjected & Pick<PropsRuntime<'conversation.input.model'>, 'locked'> & PropsLocale<'model'>
+  { locked, available, directory, load, select, resolveText, t, renderSlot, permission }:
+  ModelSelectInjected & Pick<PropsRuntime<'conversation.input.model'>, 'locked' | 'permission'> & PropsLocale<'model'>
     & Omit<PropsRenderSlots<'conversation.input.model.label' | 'conversation.input.model.options'>, 'SessionProvider'>,
 ) {
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   const state = useSyncExternalStore(
     fn => directory.subscribe(fn),
     () => directory.getSnapshot(),
@@ -161,11 +162,12 @@ export function ModelSelect(
       // The portaled card is outside the trigger subtree; check both.
       if (rootRef.current?.contains(event.target as Node) === true) return
       if (menuRef.current?.contains(event.target as Node) === true) return
+      if (permission != null && event.target instanceof Element && event.target.closest('[aria-modal="true"]')) return
       setOpen(false)
     }
     document.addEventListener('mousedown', closeOutside)
     return () => { document.removeEventListener('mousedown', closeOutside) }
-  }, [open])
+  }, [open, permission])
 
   useLayoutEffect(() => {
     if (!showSearch) {
@@ -342,6 +344,7 @@ export function ModelSelect(
     if (event.relatedTarget instanceof Node && (
       rootRef.current?.contains(event.relatedTarget) === true
       || menuRef.current?.contains(event.relatedTarget) === true
+      || (permission != null && event.relatedTarget instanceof Element && event.relatedTarget.closest('[aria-modal="true"]') !== null)
     )) return
     close()
   }
@@ -463,14 +466,15 @@ export function ModelSelect(
           }
         }}
       >
-        <IconDataOutlineRegular className={css.triggerIcon} size={16} />
+        {!aiControl && <IconDataOutlineRegular className={css.triggerIcon} size={16} />}
         <span className={css.triggerLabel}>
           {currentChoice === undefined ? modelLabel : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'trigger', true)}
         </span>
-        {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
+        {!aiControl && effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
         {busy
           ? <StateDot state="ongoing" />
-          : <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />}
+          : aiControl ? <IconEllipsisOutlineRegular className={css.modelDots} size={18} aria-hidden />
+            : <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />}
       </button>
 
       {/* Portaled to body (Menu primitive's portal mode) so the sidebar and
@@ -495,14 +499,16 @@ export function ModelSelect(
                 </span>
                 <IconChevronRightOutlineRegular className={css.cellChevron} />
               </button>
-              {reasoning !== undefined && (
-                <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { drill('effort') }}>
+              {(aiControl || reasoning !== undefined) && (
+                <button ref={reasoning === undefined ? undefined : itemRef()} type="button" role="menuitem" className={css.cell}
+                  disabled={reasoning === undefined} onClick={() => { drill('effort') }}>
                   <span className={css.cellLabel}>{t('menu.effort')}</span>
-                  <span className={css.cellValue}>{effortLabel}</span>
+                  <span className={css.cellValue}>{effortLabel ?? '—'}</span>
                   <IconChevronRightOutlineRegular className={css.cellChevron} />
                 </button>
               )}
-              {renderSlot('conversation.input.model.options', {
+              {permission}
+              {!aiControl && renderSlot('conversation.input.model.options', {
                 locked: locked || busy,
                 dismiss: () => {
                   close()

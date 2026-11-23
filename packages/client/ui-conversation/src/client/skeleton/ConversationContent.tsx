@@ -107,16 +107,18 @@ export function ConversationContent(props: ConversationContentProps) {
     ? undefined
     : workspaceDisplayTitle(storedChipTitle, t('workspace.defaultName'))
 
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
+  const quickChat = aiControl && sessionId !== undefined && chipTitle === undefined
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
-      <WorkspaceChip
+      {!quickChat && <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
         menuOpen={pickerOpen}
         onClick={() => { setPickerOpen(open => !open) }}
         t={t}
-      />
-      {renderSlot('conversation.hero.workspace', {
+      />}
+      {!quickChat && renderSlot('conversation.hero.workspace', {
         open: pickerOpen,
         anchorRef: pickerAnchor,
         selectedId: pendingWorkspaceId ?? sessionWorkspace?.workspaceId,
@@ -129,7 +131,8 @@ export function ConversationContent(props: ConversationContentProps) {
         },
         onClose: () => { setPickerOpen(false) },
       })}
-      {renderSlot('conversation.hero.agentPreset', {})}
+      {aiControl ? <div className={css.aiControlHeroMode}>{renderSlot('conversation.hero.agentPreset', {})}</div>
+        : renderSlot('conversation.hero.agentPreset', {})}
       {sessionId === undefined ? null : <div className={css.heroOptions}>{renderSlot('conversation.hero.options', {})}</div>}
     </div>
   )
@@ -139,7 +142,7 @@ export function ConversationContent(props: ConversationContentProps) {
   // blank session whose workspace vanished (deleted from the sidebar). The
   // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
   // not a different tree, so the textarea DOM survives the transition.
-  const inert = sessionId === undefined || (hero && chipTitle === undefined)
+  const inert = sessionId === undefined || (hero && chipTitle === undefined && !quickChat)
   // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
   // when both hold — picking a workspace is the earlier prerequisite.
@@ -159,7 +162,7 @@ export function ConversationContent(props: ConversationContentProps) {
         // block keeps the model seat live because choosing a model is how the
         // user clears it.
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
-        : hero ? { placeholder: t('placeholder.hero') } : {}),
+        : hero ? { placeholder: t(aiControl ? 'placeholder.aiControl' : 'placeholder.hero') } : {}),
   })
 
   const composerBar = (

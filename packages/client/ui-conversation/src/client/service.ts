@@ -374,6 +374,19 @@ export class ConversationController extends Service implements IConversation {
     }
   }
 
+  /** Wait for the current draft uploads before the composer freezes a gated submission. */
+  async waitForDraftUploads(ids: readonly DraftAttachmentId[]): Promise<void> {
+    await Promise.all(ids.map(id => this.fileUploadOperations.get(id)?.done))
+    const uploads = this.fileUploads.getSnapshot()
+    for (const id of ids) {
+      const upload = uploads[id]
+      if (upload?.status === 'error') throw new Error(upload.message)
+      if (upload?.status === 'uploading' || !this.draftAttachments.has(id)) {
+        throw new Error('One or more draft attachments are no longer ready to send')
+      }
+    }
+  }
+
   private beginFileUpload(sessionId: SessionId, attachment: ComposerAttachment): void {
     this.fileUploadOperations.get(attachment.id)?.controller.abort()
     const controller = new AbortController()

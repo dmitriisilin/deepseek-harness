@@ -339,7 +339,12 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
   await dialog.getByRole('button', { name: 'Open', exact: true }).click()
   // The pick connected the workspace: the blank session's live composer
   // replaces the locked placeholder and enables.
-  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
+  const aiControl = (await page.locator('html').getAttribute('data-ai-control')) === 'red'
+  if (aiControl) {
+    await page.locator('[data-composer-seat]').getByText(name, { exact: true }).waitFor({ timeout: 15_000 })
+  }
+  const placeholder = aiControl ? 'Type your message' : 'Describe what you want to build, / commands, @ files or sessions'
+  await page.locator(`[data-composer-input][contenteditable="true"][data-placeholder="${placeholder}"]`)
     .waitFor({ timeout: 15_000 })
 }
 

@@ -235,3 +235,10 @@
   line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
 }
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .workspace {
+    min-height: 36px;
+    font-size: 16px;
+  }
+}

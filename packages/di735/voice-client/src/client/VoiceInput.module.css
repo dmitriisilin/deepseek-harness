@@ -53,3 +53,28 @@
 
   .deviceError { grid-column: 1; }
 }
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  :global(html[data-ai-control='red']) .trigger svg {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+:global(html[data-ai-control='red']) .trigger {
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-specific-selector);
+}
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .trigger {
+    width: 44px;
+    height: 44px;
+  }
+}

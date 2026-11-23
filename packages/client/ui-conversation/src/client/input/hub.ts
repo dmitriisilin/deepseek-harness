@@ -52,6 +52,7 @@ interface ConversationAttachmentFace {
     accept?: () => void,
   ): Promise<SubmitOutcome>
   serializeDraftAttachments(attachmentIds: readonly DraftAttachmentId[]): Promise<DraftAttachmentSerializationResult>
+  waitForDraftUploads(ids: readonly DraftAttachmentId[]): Promise<void>
   releaseDraftAttachment(id: DraftAttachmentId): void
 }
 
@@ -102,7 +103,7 @@ export class InputHub implements SessionInputResolver {
     const existing = this.shells.get(binding)
     if (existing !== undefined) return existing
     const { session, ctx: actx } = binding
-    const shell = new SessionInputShell({
+    const shell: SessionInputShell = new SessionInputShell({
       actx,
       submissionState: () => {
         const state = session.getSnapshot()
@@ -124,7 +125,8 @@ export class InputHub implements SessionInputResolver {
         })
       },
       messageSubmitted: (submission) => { reportMessageSubmission(this.rootCtx, submission) },
-      beforeSubmit: () => this.submitGates?.run(session.sessionId),
+      beforeSubmit: () => this.submitGates?.run(session.sessionId)?.then(() =>
+        this.conversation().waitForDraftUploads(shell.snapshot.attachmentIds)),
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       inbox: session.projections.faceOf('inbox') as ObservableSnapshot<InboxState | undefined>,

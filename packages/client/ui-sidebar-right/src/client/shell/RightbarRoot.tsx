@@ -34,5 +34,6 @@ function SessionView({ view, visible, SessionProvider, renderSlot, mountView, wi
 export function RightbarRoot({ usePanelInfo, useViews, ...props }: RootProps) {
   const visible = usePanelInfo(info => info.activePanelId === null)
   const views = useViews(value => value)
+  if (props.viewportWidth <= 600 && document.documentElement.dataset.aiControl === 'red') return null
   return <>{views.map(view => <SessionView key={view.sessionId} {...props} view={view} visible={visible} />)}</>
 }

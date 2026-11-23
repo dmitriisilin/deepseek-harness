@@ -17,7 +17,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { ChangeEvent, KeyboardEvent, MouseEvent } from 'react'
 import clsx from 'clsx'
 import {
-  focusWithoutRing, IconPlusOutlineMedium, IconTriangleRightFillRegular, IconWarningOutlineRegular, isMobileDevice, Toast, Tooltip,
+  focusWithoutRing, IconPlusOutlineMedium, IconTriangleRightFillRegular, IconWarningOutlineRegular, isMobileDevice, Menu, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -66,7 +66,9 @@ export const InputBar = memo(function InputBar({
   const stopAction = cancelDenied ? undefined : stop
   void useLexicon // hook seat stays bound by the inject compartment; text-ref decoration rides the shell's editor transforms
   const commandMenuOpen = useMenuLauncher(source => source === 'command')
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   const [activity, setActivity] = useState(false)
+  const [activitySubmitReady, setActivitySubmitReady] = useState(false)
   useEffect(() => { setActivity(false) }, [sessionId])
   const promptError = useSession(s => s.promptError) ?? null
   const running = useSession(s => s.running) ?? false
@@ -94,7 +96,7 @@ export const InputBar = memo(function InputBar({
     () => input === undefined || resolveDraftAttachments === undefined ? [] : resolveDraftAttachments(input.attachmentIds),
     [resolveDraftAttachments, input?.attachmentIds],
   )
-  const empty = draft.trim() === '' && attachments.length === 0
+  const empty = !activitySubmitReady && draft.trim() === '' && attachments.length === 0
   const uploads = useFileUploads(snapshot => snapshot)
   // Send waits for every picked file and every uploading image: uploading and
   // failed drafts both hold the gate (a failed upload is retried or removed,
@@ -276,7 +278,11 @@ export const InputBar = memo(function InputBar({
 
   const canAcceptDrop = !uploadDenied && (subagent === null || continuable) && !locked && !machineBusy && addFiles !== undefined
 
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const photoInputRef = useRef<HTMLInputElement | null>(null)
+  const canPickFiles = canAcceptDrop && subagent === null
   const onPickFiles = (e: ChangeEvent<HTMLInputElement>): void => {
     const picked = e.target.files === null ? [] : [...e.target.files]
     // Reset so picking the same file again re-fires the change event.
@@ -432,7 +438,7 @@ export const InputBar = memo(function InputBar({
   // (the gate never consults plan mode), so the actionable hint wins.
     : canSteerQueue
       ? t('placeholder.steerQueue')
-      : planActive ? t('placeholder.plan') : t('placeholder.default'))
+      : planActive ? t('placeholder.plan') : t(aiControl ? 'placeholder.aiControl' : 'placeholder.default'))
 
   return (
     <div className={clsx(css.root, variant === 'hero' && css.hero)}>
@@ -503,7 +509,27 @@ export const InputBar = memo(function InputBar({
         />
         <div ref={rowRef} className={css.row}>
           <div className={css.tools} hidden={activity}>
-            <Tooltip label={t('input.commands')} side="top" delayMs={500} portal>
+            {aiControl ? <Menu
+              open={attachmentMenuOpen && canPickFiles && !activity}
+              onClose={() => { setAttachmentMenuOpen(false) }}
+              items={[
+                { id: 'camera', label: t('attachment.camera') },
+                { id: 'photos', label: t('attachment.photos') },
+                { id: 'files', label: t('attachment.files') },
+              ]}
+              onSelect={(id) => {
+                setAttachmentMenuOpen(false)
+                const picker = id === 'camera' ? cameraInputRef : id === 'photos' ? photoInputRef : fileInputRef
+                picker.current?.click()
+              }}
+              side="top"
+              portal
+              anchor={<button type="button" className={css.add} aria-label={t('attachment.add')}
+                aria-haspopup="menu" aria-expanded={attachmentMenuOpen && canPickFiles && !activity}
+                disabled={!canPickFiles} onClick={() => { setAttachmentMenuOpen(open => !open) }}>
+                <IconPlusOutlineMedium size={14} />
+              </button>}
+            /> : <Tooltip label={t('input.commands')} side="top" delayMs={500} portal>
               <button
                 type="button"
                 className={css.add}
@@ -516,17 +542,23 @@ export const InputBar = memo(function InputBar({
               >
                 <IconPlusOutlineMedium size={14} />
               </button>
-            </Tooltip>
+            </Tooltip>}
+            {aiControl && <>
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment"
+                disabled={!canPickFiles} hidden onChange={onPickFiles} />
+              <input ref={photoInputRef} type="file" accept="image/*" multiple
+                disabled={!canPickFiles} hidden onChange={onPickFiles} />
+            </>}
             <input
               ref={fileInputRef}
               type="file"
               multiple
-              disabled={!canAcceptDrop || subagent !== null}
+              disabled={!canPickFiles}
               hidden
               onChange={onPickFiles}
             />
             <div className={css.modes}>
-              {sessionId === undefined ? null : renderSlot('conversation.input.permission', { locked })}
+              {sessionId === undefined || aiControl ? null : renderSlot('conversation.input.permission', { locked })}
               {sessionId === undefined ? null : renderSlot('conversation.input.plan', { locked })}
             </div>
             {input === undefined || sessionId === undefined
@@ -538,10 +570,13 @@ export const InputBar = memo(function InputBar({
               {input === undefined || sessionId === undefined
                 ? null
                 : renderSlot('conversation.input.right', {})}
-              {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
+              {sessionId === undefined ? null : renderSlot('conversation.input.model', {
+                locked: modelSeatLocked,
+                ...aiControl ? { permission: renderSlot('conversation.input.permission', { locked, embedded: true }) } : {},
+              })}
             </div>
             {input === undefined || sessionId === undefined ? null : <div className={activity ? css.activityExpanded : css.activity}>
-              {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity, addFiles })}
+              {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity, onSubmitReadyChange: setActivitySubmitReady, addFiles })}
             </div>}
             {interruptible && !cancelDenied && (
               <Tooltip label={t('input.stop')} shortcutKeys={stopKeys} side="top" delayMs={500} disabled={stopAction === undefined} portal>

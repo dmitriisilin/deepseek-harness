@@ -842,3 +842,25 @@
     animation: none;
   }
 }
+
+.aiControlBrand {
+  margin-inline-end: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+:global(html[data-ai-control='red']) .newSession {
+  min-height: 44px;
+  background: #19191b;
+  color: #fff;
+  font-weight: 650;
+}
+
+:global(html[data-ai-control='red'] body[data-ds-dark-theme]) .newSession {
+  background: #f2eeee;
+  color: #1d191b;
+}

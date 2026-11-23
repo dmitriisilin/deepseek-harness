@@ -58,11 +58,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const turn = turnOf(routedNode)
   const processPresentation = useChatNodeProcess(nodeKey)
   const processSpec = processPresentation?.spec
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   const storedOpen = useStore(state => processSpec !== undefined
-    && turnProcessOpen(state, processSpec, bottom === true && deferCollapse))
+    && turnProcessOpen(state, processSpec, !aiControl && bottom === true && deferCollapse))
   const liveProcess = processPresentation !== undefined && !processPresentation.turnClosed
   const interleavedInput = processPresentation?.hasInterleavedInput === true
-  const alwaysOpen = liveProcess || interleavedInput || turnProcessAlwaysOpen(routedNode)
+  const alwaysOpen = interleavedInput || (liveProcess ? !aiControl : turnProcessAlwaysOpen(routedNode))
   const processOpen = alwaysOpen || storedOpen
   const setOpen = useCallback((open: boolean) => {
     if (processSpec !== undefined && !alwaysOpen) {
@@ -78,7 +79,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     && processPresentation.turn === processSpec.turn
     && (processPresentation.turnStarted || processPresentation.turnClosed)
   // With every reply kept, an Assistant reply stays outside whole-Turn folding; its reasoning remains process content.
-  const replyRow = keepReplies
+  const replyRow = (keepReplies || (aiControl && liveProcess))
     && routedNode?.kind === 'assistant-step'
     && groupPart !== 'reasoning'
     && hasAssistantReplyContent(routedNode.data.blocks)

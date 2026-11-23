@@ -31,7 +31,7 @@ function fixture(recording?: Recording, navigable = true) {
   } })
   const transcribe = vi.fn<(request: unknown, signal: AbortSignal) => Promise<RemoteResult<Transcript>>>(
     async () => ({ ok: true, value: transcript }))
-  const props: VoiceInputProps = { sessionId: 'one' as SessionId, inputActions, transcribe, locked: false, onActiveChange: vi.fn(),
+  const props: VoiceInputProps = { sessionId: 'one' as SessionId, inputActions, transcribe, locked: false, addFiles: undefined, onActiveChange: vi.fn(),
     openSettings: vi.fn(), prepare: vi.fn(async () => {}), cancelPreparation: vi.fn(async () => {}), configure: vi.fn(async () => {}),
     selectMicrophone: vi.fn(), useMicrophoneDevice: bindSnapshotSelector(createSnapshotStore({ id: '', label: '' })),
     useSpeechReadiness: bindSnapshotSelector(readiness), createRecording: () => recording ?? capture,

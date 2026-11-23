@@ -337,7 +337,8 @@
 }
 
 /* Two-level root cells use the same compact rhythm as the model rows. */
-.cell {
+.cell,
+.menu :global([data-model-access-row]) {
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -357,22 +358,26 @@
   outline: none;
 }
 
-.cell:focus-visible {
+.cell:focus-visible,
+.menu :global([data-model-access-row]):focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
 @media (hover: hover) {
-  .cell:hover {
+  .cell:hover,
+  .menu :global([data-model-access-row]):hover {
     background: var(--dsw-alias-interactive-bg-hover);
   }
 }
 
-.cellLabel {
+.cellLabel,
+.menu :global([data-model-access-label]) {
   flex: 0 0 auto;
   white-space: nowrap;
 }
 
-.cellValue {
+.cellValue,
+.menu :global([data-model-access-value]) {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -382,9 +387,63 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.cellChevron {
+.cellChevron,
+.menu :global([data-model-access-chevron]) {
   flex: 0 0 auto;
   width: 12px;
   height: 12px;
   color: var(--dsw-alias-menu-icon);
+}
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .menu {
+    inset-inline: 12px;
+    width: auto;
+    max-width: none;
+    justify-self: stretch;
+  }
+
+  :global(html[data-ai-control='red']) .menu :is(.cell, :global([data-model-access-row])) {
+    height: 44px;
+    font-size: 15px;
+  }
+}
+
+:global(html[data-ai-control='red']) .trigger {
+  width: 100%;
+  height: 36px;
+  padding-inline: 12px;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+}
+
+:global(html[data-ai-control='red']) .triggerLabel {
+  display: block;
+  flex: 1;
+  text-align: center;
+  text-overflow: clip;
+  mask-image: linear-gradient(to right, black calc(100% - 8px), transparent);
+}
+
+.modelDots {
+  flex: none;
+  transform: rotate(90deg);
+}
+
+.cell:disabled .cellChevron {
+  visibility: hidden;
+}
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .root {
+    flex: 1;
+  }
+
+  :global(html[data-ai-control='red']) .trigger {
+    height: 44px;
+    padding-inline: 8px;
+  }
 }

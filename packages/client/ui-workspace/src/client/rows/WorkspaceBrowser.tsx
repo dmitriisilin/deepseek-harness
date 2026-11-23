@@ -21,7 +21,7 @@ import {
   AnimatedRows, HoverCardGroup, IconArchiveCheckOutlineRegular, IconArchiveOffOutlineRegular, IconArchiveOutlineRegular,
   IconChevronsUpDownOutlineRegular, IconClockOutlineRegular, IconCloseFillRegular,
   IconFlatListOutlineRegular, IconFolderCloseRegular, IconProjectAddOutlineRegular,
-  IconQueueOutlineRegular, IconSearchOutlineRegular, IconSlidersTwoOutlineRegular,
+  IconQueueOutlineRegular, IconSearchOutlineRegular, IconSlidersTwoOutlineRegular, IconPinFillRegular,
   IconWorkspaceTreeOutlineRegular, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -139,8 +139,9 @@ function useNativeDragAcceptance(active: boolean): void {
 }
 
 /** Grouping, ordering, and archived-filter menu; own open state so it resets with the wide chrome. */
-function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrderPick, onArchivedFilterPick, t }: {
+function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, lockGrouping, onGroupPick, onOrderPick, onArchivedFilterPick, t }: {
   groupBy: SessionGroupBy
+  lockGrouping?: boolean
   orderBy: SessionOrderBy
   archivedFilter: ArchivedFilter
   onGroupPick: (mode: SessionGroupBy) => void
@@ -154,11 +155,13 @@ function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrde
       open={open}
       onClose={() => { setOpen(false) }}
       items={[
-        { type: 'label' as const, id: 'group-by', text: t('groupBy.label') },
-        { id: 'workspace', label: t('groupBy.workspace'), icon: <IconFolderCloseRegular /> },
-        { id: 'workspace-tree', label: t('groupBy.workspaceTree'), icon: <IconWorkspaceTreeOutlineRegular /> },
-        { id: 'flat', label: t('groupBy.flat'), icon: <IconFlatListOutlineRegular /> },
-        { type: 'separator' as const, id: 'order-by-separator' },
+        ...lockGrouping ? [] : [
+          { type: 'label' as const, id: 'group-by', text: t('groupBy.label') },
+          { id: 'workspace', label: t('groupBy.workspace'), icon: <IconFolderCloseRegular /> },
+          { id: 'workspace-tree', label: t('groupBy.workspaceTree'), icon: <IconWorkspaceTreeOutlineRegular /> },
+          { id: 'flat', label: t('groupBy.flat'), icon: <IconFlatListOutlineRegular /> },
+          { type: 'separator' as const, id: 'order-by-separator' },
+        ],
         { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
         { id: 'manual', label: t('orderBy.manual'), icon: <IconChevronsUpDownOutlineRegular /> },
         { id: 'updated', label: t('orderBy.updated'), icon: <IconClockOutlineRegular /> },
@@ -270,6 +273,9 @@ type SessionTreeProps = Pick<
   workspaces: readonly WorkspaceView[]
   /** Browser-projected order for Sessions outside every Workspace. */
   ungroupedSessionIds: readonly SessionId[]
+  aiControl?: boolean
+  workspacePins?: readonly string[]
+  onWorkspacePin?: (id: string) => void
   /** Whether the current Workspace stream has a complete Host baseline. */
   workspaceReady: boolean
   /** Grouping, ordering, and filter changes replace the view without row motion. */
@@ -313,7 +319,7 @@ function EmptySessions({ rowState, onLeaveArchivedOnly, t }: Pick<SessionTreePro
 /** The scrolling session tree; unmounting drops the sessions subscription and the session watermarks. */
 function SessionTree({
   list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds,
-  rowState, onLeaveArchivedOnly,
+  rowState, onLeaveArchivedOnly, aiControl, workspacePins, onWorkspacePin,
   workspaceReady, animationResetKey, usePanelInfo, useSessionAccess, useWorkspaceAccess,
   onSessionRenameRequest,
   renderSlot, renderFactorySlot, useContextMenuTarget, useContextMenu,
@@ -373,8 +379,8 @@ function SessionTree({
     () => deriveGroups(list, workspaces, rowState, statuses, {
       expandedGroups,
       ungroupedOrder: ungroupedSessionIds,
-    }),
-    [list, workspaces, rowState, statuses, expandedGroups, ungroupedSessionIds],
+    }).filter(group => !aiControl || group.workspaceId !== undefined),
+    [list, workspaces, rowState, statuses, expandedGroups, ungroupedSessionIds, aiControl],
   )
   useEffect(() => {
     for (let key = revealGroup; key !== undefined; key = parents.get(key)) {
@@ -568,6 +574,8 @@ function SessionTree({
             startSession(workspaceId)
           }}
           drag={workspaceDragProps}
+          pinned={workspacePins?.includes(group.key)}
+          onPin={onWorkspacePin === undefined ? undefined : () => { onWorkspacePin(group.key) }}
         />
         {childRows.length > 0 && (
           <div role="group">
@@ -949,7 +957,10 @@ export function WorkspaceBrowser({
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
-  const groupBy = useStore(s => s.groupBy)
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
+  const projectsCollapsed = useStore(s => s.aiControlProjectsCollapsed ?? false)
+  const workspacePins = useStore(s => s.aiControlWorkspacePins)
+  const groupBy = useStore(s => aiControl ? 'workspace-tree' : s.groupBy)
   const orderBy = useStore(s => s.orderBy)
   // Persisted view blobs written before the archived filter existed rehydrate
   // without the field; they read as the default hide-archived view.
@@ -1215,12 +1226,48 @@ export function WorkspaceBrowser({
       console.warn('session unarchive rejected:', reason)
     })
   }
+  const shortcutStatuses = useSessionStatus(s => s)
+  const showSections = aiControl && wide && normalizedQuery === '' && archivedFilter !== 'only'
+  const shortcutRows = useMemo(() => !aiControl ? [] : deriveFlat(
+    list, orderByRecency(list.ids, list.byId),
+    { ...rowState, archivedFilter: 'default', pinnedSessionIds: [] }, shortcutStatuses,
+  ).filter(node => !node.blank), [aiControl, list, rowState, shortcutStatuses])
+  const shortcutCurrent = list.ids.find(id => (list.byId[id]?.retainedBy.mainView ?? 0) > 0)
+  const renderShortcut = (node: SessionNode) => (
+    <SessionNodeItem key={node.id} node={node} currentId={shortcutCurrent} now={Date.now()}
+      onOpen={guardedOpen} onRenameRequest={requestSessionRename} renderSlot={renderSlot}
+      renderFactorySlot={renderFactorySlot} useContextMenu={useContextMenu}
+      useContextMenuTarget={useContextMenuTarget} useSessionAccess={useSessionAccess} home={home} t={t} />
+  )
+  const pinnedRows = shortcutRows.filter(node => pinnedSessionIds.includes(node.id))
+  const pinnedProjects = orderedWorkspaces.filter(workspace => workspacePins?.includes(workspace.workspaceId))
   return (
-    <div className={clsx(css.root, !wide && css.rail)}>
+    <div className={clsx(css.root, !wide && css.rail, aiControl && css.aiControl)}>
+      {showSections && (pinnedProjects.length + pinnedRows.length > 0) && <section aria-label={t('row.pinned')} className={css.aiControlPinned}>
+        <h2>{t('row.pinned')}</h2>
+        {pinnedProjects.map(project => <button key={project.workspaceId} type="button" className={css.aiControlProjectLink}
+          onClick={() => {
+            actions.setAiControlProjectsCollapsed(false)
+            const paths = orderedWorkspaces.map(workspace => workspace.path)
+            let parent: WorkspaceView | undefined = project
+            while (parent !== undefined) {
+              actions.setGroupExpanded(parent.workspaceId, true)
+              const path = owningParentFolder(parent.path, paths)
+              parent = path === undefined ? undefined : orderedWorkspaces.find(workspace => workspace.path === path)
+            }
+            requestAnimationFrame(() => document.getElementById(`ai-control-project-${project.workspaceId}`)?.scrollIntoView({ block: 'nearest' }))
+          }}>
+          <IconPinFillRegular size={16} /> {project.title}
+        </button>)}
+        <HoverCardGroup>{pinnedRows.map(node => renderShortcut({ ...node, pinned: true }))}</HoverCardGroup>
+      </section>}
       <div className={clsx(css.sectionHeader, wide && searchSpacingMotionEnabled && css.searchSpacingMotion)} data-sidebar-workspace-header="">
         {wide && (
           <span className={clsx(css.sectionLabel, css.wide, searchExpanded && css.sectionLabelHidden)}>
-            {groupBy === 'flat' ? t('section.sessions') : t('section.workspaces')}
+            {showSections ? <button type="button" className={css.aiControlProjectsToggle}
+              aria-expanded={!projectsCollapsed} onClick={() => { actions.setAiControlProjectsCollapsed(!projectsCollapsed) }}>
+              {t('aiControl.projects')} <IconChevronsUpDownOutlineRegular size={14} />
+            </button> : groupBy === 'flat' ? t('section.sessions') : t('section.workspaces')}
           </span>
         )}
         {wide && (
@@ -1284,6 +1331,7 @@ export function WorkspaceBrowser({
           {wide && (
             <ViewOptionsMenu
               groupBy={groupBy}
+              lockGrouping={aiControl}
               orderBy={orderBy}
               archivedFilter={archivedFilter}
               onGroupPick={actions.setGroupBy}
@@ -1394,7 +1442,7 @@ export function WorkspaceBrowser({
                 t={t}
               />
             )
-            : (
+            : (!showSections || (!projectsCollapsed && workspaces.length > 0)) && (
               <SessionTree
                 useSessionAccess={useSessionAccess}
                 useWorkspaceAccess={useWorkspaceAccess}
@@ -1407,6 +1455,11 @@ export function WorkspaceBrowser({
                 renderFactorySlot={renderFactorySlot} useContextMenu={useContextMenu}
                 useContextMenuTarget={useContextMenuTarget}
                 workspaces={orderedWorkspaces}
+                {...showSections ? {
+                  aiControl: true,
+                  ...(workspacePins === undefined ? {} : { workspacePins }),
+                  onWorkspacePin: actions.toggleAiControlWorkspacePin,
+                } : {}}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}
                 nestWorkspaces={groupBy === 'workspace-tree'}
@@ -1425,6 +1478,12 @@ export function WorkspaceBrowser({
                 t={t}
               />
             ))}
+        {showSections && <section aria-label={t('aiControl.recent')} className={css.aiControlRecent}>
+          <h2>{t('aiControl.recent')}</h2>
+          <HoverCardGroup>
+            {shortcutRows.map(node => renderShortcut({ ...node, pinned: pinnedSessionIds.includes(node.id) }))}
+          </HoverCardGroup>
+        </section>}
       </div>
 
       {workspaceActionRequest !== null && <WorkspaceDialogs key={`${workspaceActionRequest.action}/${workspaceActionRequest.workspaceId}`}

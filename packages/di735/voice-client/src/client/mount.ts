@@ -34,6 +34,7 @@ function registerUi(ctx: Context): void {
     }, 'voice-input: plugin navigation presence')
   })
   const actions: VoiceInputInjected = {
+    registerSubmitGate: (sessionId, gate) => ctx.get('composerSubmit')?.register(sessionId, gate),
     openSettings: () => { ctx.get('pluginNavigation')?.openBundle('@deepseek-ai/dsh-experimental-voice-input-bundle') },
     hooks: { speechReadiness: readiness.state, microphoneDevice: microphone, pluginNavigation },
     selectMicrophone: (device) => { microphone.set(device) },

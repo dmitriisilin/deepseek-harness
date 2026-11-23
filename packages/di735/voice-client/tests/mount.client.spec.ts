@@ -9,7 +9,6 @@ import { RemoteError, type TypertRemoteContribution } from '@deepseek-ai/dsh-typ
 import { expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { mountVoiceInput, inject } from '../src/client/mount.ts'
-import { apply as hostApply } from '../src/index.ts'
 import { VoiceInput, type VoiceInputInjected } from '../src/client/VoiceInput.tsx'
 import { captureFixture } from './audio-fixture.client.ts'
 
@@ -64,7 +63,6 @@ async function fixture(fail = false, navigation = true) {
 }
 
 it('starts without the Plugins page navigation and follows its presence', async () => {
-  hostApply()
   const b = await fixture(false, false)
   try {
     await b.ctx.plugin({ inject: [...inject], apply: ctx => mountVoiceInput(ctx, REMOTE) })
@@ -86,7 +84,6 @@ it('starts without the Plugins page navigation and follows its presence', async 
 })
 
 it('withdraws its Remote, localized slot and microphone captures on disposal', async () => {
-  hostApply()
   const b = await fixture()
   try {
     const fiber = b.ctx.plugin({ inject: [...inject], apply: ctx => mountVoiceInput(ctx, REMOTE) })

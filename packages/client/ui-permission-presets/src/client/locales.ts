@@ -40,6 +40,8 @@ export const en = {
 
 /** Simplified Chinese dictionary for the current-session popup gate. */
 export const accessZh = {
+  'access': '访问权限',
+  'workspace.short': '工作区',
   'mode': '访问模式，当前：{name}',
   'close': '关闭',
   'preset.readOnly': '仅可查看',
@@ -64,6 +66,8 @@ export type PermissionAccessKey = keyof typeof accessZh
 
 /** English dictionary for the current-session popup gate. */
 export const accessEn = {
+  'access': 'Access',
+  'workspace.short': 'Workspace',
   'mode': 'Access mode, current: {name}',
   'close': 'Close',
   'preset.readOnly': 'Read Only',
@@ -181,6 +185,8 @@ export const pt = {
 
 /** Japanese copy, checked against the English keys. */
 export const accessJa = {
+  'access': 'アクセス',
+  'workspace.short': 'ワークスペース',
   'mode': 'アクセスモード、現在: {name}',
   'close': '閉じる',
   'preset.readOnly': '読み取り専用',
@@ -202,6 +208,8 @@ export const accessJa = {
 
 /** Spanish dictionary, checked against the English keys. */
 export const accessEs = {
+  'access': 'Acceso',
+  'workspace.short': 'Espacio de trabajo',
   'mode': 'Modo de acceso, actual: {name}',
   'close': 'Cerrar',
   'preset.readOnly': 'Sólo lectura',
@@ -223,6 +231,8 @@ export const accessEs = {
 
 /** French dictionary, checked against the English keys. */
 export const accessFr = {
+  'access': 'Accès',
+  'workspace.short': 'Espace de travail',
   'mode': "Mode d'accès, actuel : {name}",
   'close': 'Fermer',
   'preset.readOnly': 'Lecture seule',
@@ -244,6 +254,8 @@ export const accessFr = {
 
 /** German dictionary, checked against the English keys. */
 export const accessDe = {
+  'access': 'Zugriff',
+  'workspace.short': 'Arbeitsbereich',
   'mode': 'Zugriffsmodus, aktuell: {name}',
   'close': 'Schließen',
   'preset.readOnly': 'Nur lesen',
@@ -265,6 +277,8 @@ export const accessDe = {
 
 /** Russian dictionary, checked against the English keys. */
 export const accessRu = {
+  'access': 'Доступ',
+  'workspace.short': 'Рабочая область',
   'mode': 'Режим доступа, текущий: {name}',
   'close': 'Закрыть',
   'preset.readOnly': 'Только чтение',
@@ -286,6 +300,8 @@ export const accessRu = {
 
 /** Portuguese dictionary, checked against the English keys. */
 export const accessPt = {
+  'access': 'Acesso',
+  'workspace.short': 'Espaço de trabalho',
   'mode': 'Modo de acesso, atual: {name}',
   'close': 'Fechar',
   'preset.readOnly': 'Somente leitura',

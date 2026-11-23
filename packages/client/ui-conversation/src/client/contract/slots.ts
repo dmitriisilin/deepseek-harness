@@ -28,7 +28,10 @@ import type { UserTextDocumentInput, UserTextEvaluator, UserTextId, UserTextNode
 declare module '@deepseek-ai/dsh-client-ui-context-menu/client' {
   interface ContextMenuTargetMap {
     /** Session Header More menu, independent of Session-row and title context actions. */
-    sessionHeader: { readonly sessionId: SessionId }
+    sessionHeader: {
+      readonly sessionId: SessionId
+      readonly views?: readonly { id: string; label: string; select: () => void }[]
+    }
   }
 }
 
@@ -352,14 +355,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * Current-session permission control inside the composer tool row; fixed overlays must portal
      * to the document body because the docked composer contains them.
      */
-    'conversation.input.permission': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
+    'conversation.input.permission': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps & { embedded?: boolean } }
     /**
      * Model selector inside the composer tool row. When expanded controls cannot
      * share a line, the row sets --dsh-composer-model-text-display to none and
      * --dsh-composer-model-icon-display to block for an occupant's compact display.
      * Fixed overlays must portal to the document body because the docked composer contains them.
      */
-    'conversation.input.model': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
+    'conversation.input.model': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps & { permission?: ReactNode } }
   }
 
   interface SlotFactoryMap {
@@ -633,6 +636,8 @@ export interface InputControlOwnerProps {
 export interface InputActivityOwnerProps extends InputControlOwnerProps {
   /** @param active - whether the occupant needs the toolbar width before the submit action. */
   onActiveChange: (active: boolean) => void
+  /** Enable Send for an activity that can add content before the draft is submitted. */
+  onSubmitReadyChange?: (ready: boolean) => void
   /**
    * Add one picked batch to the draft, with the composer rail's contract: a
    * string is the localized rejection copy, null means accepted. An activity

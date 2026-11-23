@@ -36,7 +36,14 @@ function contentParts(content: readonly unknown[]): {
     }
     else rest.push(block)
   }
-  return { text: texts.join(''), attachments, rest }
+  const voiceTranscript = typeof document !== 'undefined'
+    && document.documentElement.dataset.aiControl === 'red'
+    && attachments.some(attachment => attachment.type === 'file'
+      && /^ai-center-voice-[0-9a-f-]{36}\.wav$/u.test(attachment.file.name))
+  const text = voiceTranscript
+    ? texts.map(part => part.replace(/^\[Voice message transcript\]\r?\n/u, '')).join('')
+    : texts.join('')
+  return { text, attachments, rest }
 }
 
 function retrySeconds(milliseconds: number): number {

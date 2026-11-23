@@ -470,3 +470,49 @@
 .activity { display: flex; align-items: center; flex: none; }
 .activity:empty { display: none; }
 .activityExpanded { flex: 1; min-width: 0; }
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .input {
+    font-size: max(18px, var(--dsh-content-font-size, 14px));
+    min-height: 50px;
+  }
+
+  :global(html[data-ai-control='red']) .primary,
+  :global(html[data-ai-control='red']) .add {
+    width: 44px;
+    height: 44px;
+  }
+
+  :global(html[data-ai-control='red']) .add svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .hero .input {
+    min-height: 84px;
+  }
+
+  :global(html[data-ai-control='red']) .hero .placeholder {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+}
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) :is(.row, .trailing, .standardControls) {
+    gap: 6px;
+  }
+
+  :global(html[data-ai-control='red']) .modes:empty {
+    display: none;
+  }
+
+  :global(html[data-ai-control='red']) .trailing,
+  :global(html[data-ai-control='red']) .standardControls,
+  :global(html[data-ai-control='red']) .standardControls > :global([data-slot='conversation.input.model']) {
+    flex: 1;
+    min-width: 0;
+  }
+}

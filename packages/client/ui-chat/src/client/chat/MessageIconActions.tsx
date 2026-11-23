@@ -3,7 +3,7 @@
 
 import { useId, type ReactNode } from 'react'
 import {
-  IconBranchOutlineRegular, IconCheckOutlineRegular, IconCopyOutlineRegular, Tooltip, useClipboardCopy,
+  IconBranchOutlineRegular, IconCheckOutlineRegular, IconCopyOutlineRegular, IconEllipsisOutlineRegular, Tooltip, useClipboardCopy,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { formatMessageClock } from './message-chrome.ts'
@@ -55,36 +55,44 @@ export function MessageIconActions({
     </span>
   )
   return (
-    <div className={className === undefined ? css.actions : `${css.actions} ${className}`} data-clock={clock}>
-      {clock === 'start' ? clockEl : null}
-      <Tooltip label={copied ? t('copied') : t('copy')} side="bottom">
-        <button type="button" className={css.action} aria-label={copied ? t('copied') : t('copy')} onClick={onCopy}>
-          {copied ? <IconCheckOutlineRegular /> : <IconCopyOutlineRegular />}
-        </button>
-      </Tooltip>
-      {extraActions}
-      {onBranch !== undefined && (
-        <Tooltip label={branchUnavailable ? t('message.branchUnavailable') : t('message.branch')} side="bottom" openOnClick={branchUnavailable}>
-          {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}
-          <button
-            type="button"
-            className={css.action}
-            aria-label={t('message.branch')}
-            aria-disabled={branchUnavailable || undefined}
-            aria-describedby={branchUnavailable ? reasonId : undefined}
-            data-unavailable={branchUnavailable || undefined}
-            onClick={branchUnavailable ? undefined : onBranch}
-          >
-            <IconBranchOutlineRegular />
+    <>
+      <div className={className === undefined ? css.actions : `${css.actions} ${className}`} data-clock={clock}>
+        {clock === 'start' ? clockEl : null}
+        <Tooltip label={copied ? t('copied') : t('copy')} side="bottom">
+          <button type="button" className={css.action} aria-label={copied ? t('copied') : t('copy')} onClick={onCopy}>
+            {copied ? <IconCheckOutlineRegular /> : <IconCopyOutlineRegular />}
           </button>
         </Tooltip>
-      )}
-      {onBranch !== undefined && branchUnavailable && (
-        <span id={reasonId} className={css.visuallyHidden}>{t('message.branchUnavailable')}</span>
-      )}
-      {clock === 'end'
-        ? <span className={css.endInfo}>{usageAction}{clockEl}</span>
-        : usageAction}
-    </div>
+        {extraActions}
+        {onBranch !== undefined && (
+          <Tooltip label={branchUnavailable ? t('message.branchUnavailable') : t('message.branch')} side="bottom" openOnClick={branchUnavailable}>
+            {/* Native disabled buttons do not deliver the hover/focus events Tooltip needs. */}
+            <button
+              type="button"
+              className={css.action}
+              aria-label={t('message.branch')}
+              aria-disabled={branchUnavailable || undefined}
+              aria-describedby={branchUnavailable ? reasonId : undefined}
+              data-unavailable={branchUnavailable || undefined}
+              onClick={branchUnavailable ? undefined : onBranch}
+            >
+              <IconBranchOutlineRegular />
+            </button>
+          </Tooltip>
+        )}
+        {onBranch !== undefined && branchUnavailable && (
+          <span id={reasonId} className={css.visuallyHidden}>{t('message.branchUnavailable')}</span>
+        )}
+        {clock === 'end'
+          ? <span className={css.endInfo}>{usageAction}{clockEl}</span>
+          : usageAction}
+      </div>
+      <details className={css.aiControlMessageMenu}>
+        <summary aria-label={t('copy')}><IconEllipsisOutlineRegular size={20} /></summary>
+        <button type="button" onClick={() => { onCopy() }}>
+          {copied ? t('copied') : t('copy')}
+        </button>
+      </details>
+    </>
   )
 }

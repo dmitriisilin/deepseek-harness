@@ -100,3 +100,42 @@
 .chevronOpen {
   transform: rotate(180deg);
 }
+
+.aiControlPermission {
+  min-width: 0;
+}
+
+.aiControlPermission button {
+  min-height: 40px;
+  padding: 8px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.aiControlPermission button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: start;
+}
+
+.aiControlPermission button[aria-pressed='true'] {
+  font-weight: 650;
+}
+
+.aiControlPermission button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.aiControlPermission summary::-webkit-details-marker {
+  display: none;
+}
+
+.aiControlPermission[open] [data-model-access-chevron] {
+  transform: rotate(90deg);
+}

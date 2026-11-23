@@ -1,0 +1,31 @@
+@media (max-width: 600px) {
+  html[data-ai-control='red'] body:has(#root) {
+    --dsh-content-font-size: 19px !important;
+  }
+}
+
+@media (max-width: 600px) {
+  html[data-ai-control='red'] [data-composer-stat='usage'] {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  html[data-ai-control='red'] [data-sidebar-right-expand] {
+    display: none;
+  }
+
+  html[data-ai-control='red'] [data-shell-leading] [data-sidebar-opener] {
+    width: 48px;
+    height: 48px;
+  }
+
+  html[data-ai-control='red'] [data-shell-leading] [data-sidebar-opener] svg {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+html[data-ai-control='red'] [data-chat-flow]:has([data-turn-process-running]) [data-chat-running] {
+  display: none;
+}

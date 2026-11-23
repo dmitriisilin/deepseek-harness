@@ -13,6 +13,7 @@ const STANDALONE_ERROR = 'apps/web is not a standalone application: bare Vite ca
   + 'From a repository checkout, run `pnpm dsh web`; an installed package uses `dsh web`. '
   + 'For client-plugin HMR, run `pnpm run dev:web`, which starts `dsh web` and the rebuild watchers together.'
 const DEFAULT_CLIENT_TITLE = 'DSH Local Build'
+const AI_CONTROL_BUILD = process.env.DSH_WEB_BRAND === 'ai-control-red'
 
 /** Escape build-time text before placing it in the HTML title element. */
 function escapeHtmlText(value: string): string {
@@ -21,11 +22,55 @@ function escapeHtmlText(value: string): string {
 
 /** Project the public build title into the initial HTML document. */
 function clientDocumentTitle(): Plugin {
-  const title = escapeHtmlText(process.env.DSH_CLIENT_TITLE ?? DEFAULT_CLIENT_TITLE)
+  const title = escapeHtmlText(process.env.DSH_CLIENT_TITLE ?? (AI_CONTROL_BUILD ? 'AI Control' : DEFAULT_CLIENT_TITLE))
   return {
     name: 'dsh-client-document-title',
     transformIndexHtml(html) {
       return html.replace('<title>DSH Local Build</title>', `<title>${title}</title>`)
+    },
+  }
+}
+
+/** Brand the isolated PWA build while preserving the stock build and install identity. */
+function aiControlBrand(): Plugin {
+  return {
+    name: 'ai-control-red',
+    apply: 'build',
+    transformIndexHtml(html) {
+      return html.replace('<html lang="en">', '<html lang="en" data-ai-control="red">')
+        .replace('content="DSH"', 'content="AI Control"')
+        .replaceAll('href="./favicon-dark.svg"', 'href="./icon-ai-control-v3-192.png"')
+        .replaceAll('href="./favicon.svg"', 'href="./icon-ai-control-v3-192.png"')
+        .replaceAll('type="image/svg+xml"', 'type="image/png"')
+        .replace('/apple-touch-icon.png', '/apple-touch-icon-ai-control-v3.png')
+    },
+    async writeBundle(options) {
+      if (options.dir === undefined) throw new Error('AI Control requires an output directory')
+      const output = resolve(options.dir)
+      const manifest = JSON.parse(await readFile(src('./public/manifest.webmanifest'), 'utf8'))
+      manifest.name = manifest.short_name = 'AI Control'
+      for (const icon of manifest.icons) {
+        icon.src = icon.purpose === 'maskable' ? 'icon-ai-control-v3-maskable-512.png'
+          : `icon-ai-control-v3-${icon.sizes.split('x')[0]}.png`
+      }
+      const icon = await readFile(src('./branding/ai-center-experimental.png'))
+      // The red strokes carry warm chroma. The graphite tile is neutral.
+      const outline = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 644 644">
+  <filter id="outline" color-interpolation-filters="sRGB">
+    <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  4 -2 -2 0 -0.2"/>
+  </filter>
+  <image width="644" height="644" filter="url(#outline)" href="data:image/png;base64,${icon.toString('base64')}"/>
+</svg>`
+      await Promise.all([
+        writeFile(resolve(output, 'icon-ai-control-outline.svg'), outline),
+        writeFile(resolve(output, 'manifest.webmanifest'), JSON.stringify(manifest, null, 2) + '\n'),
+        ...['icon-ai-control-192.png', 'icon-ai-control-512.png', 'icon-ai-control-maskable-512.png', 'apple-touch-icon.png']
+          .map(async name => {
+            const outputName = name === 'apple-touch-icon.png' ? 'apple-touch-icon-ai-control-v3.png'
+              : name.replace(/^icon-ai-control-/, 'icon-ai-control-v3-')
+            await writeFile(resolve(output, outputName), await readFile(src(`./branding/red/${name}`)))
+          }),
+      ])
     },
   }
 }
@@ -171,7 +216,7 @@ export default defineConfig({
   // directory, and the served index resolves identically from the site root.
   base: './',
   plugins: [
-    rejectStandaloneServe(), clientDocumentTitle(), brandFontLicense(), katexWoff2Fonts(), react(), emitPreviewPage(),
+    rejectStandaloneServe(), clientDocumentTitle(), ...(AI_CONTROL_BUILD ? [aiControlBrand()] : []), brandFontLicense(), katexWoff2Fonts(), react(), emitPreviewPage(),
     productWebBundleIsolation(src('../..'), src('.')),
   ],
   build: {

@@ -176,6 +176,8 @@ export function SidebarRoot({
   // A page whose access snapshot excludes starting a Session offers no New Session affordance.
   const canStartSession = useRemoteAccess('session/create')
   const toggleLabel = collapsed ? t('toggle.open') : t('toggle.collapse')
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
+  const newSessionLabel = t(aiControl ? 'aiControl.newChat' : 'session.new.label')
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
   // A closed drawer retains its content with the rail phase already settled.
@@ -335,6 +337,14 @@ export function SidebarRoot({
             the collapsed rail's logo is the expand toggle below instead.
             Mouse clicks on the local-build fallbacks copy the version instead. */}
         {wide && (() => {
+          if (aiControl) {
+            const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]')
+            const icon = manifest && new URL('icon-ai-control-outline.svg', manifest.href).href
+            return <span className={css.aiControlBrand}>
+              {icon && <img src={icon} width={28} height={28} alt="" />}
+              AI Control
+            </span>
+          }
           const identity = (
             <span className={css.brandIdentity} aria-hidden="true">
               <span className={css.brandMark}>
@@ -364,7 +374,7 @@ export function SidebarRoot({
               <button
                 type="button"
                 className={clsx(css.brand, css.wide)}
-                aria-label={t('session.new.label')}
+                aria-label={newSessionLabel}
                 aria-keyshortcuts={newShortcut?.aria}
                 onClick={(event) => {
                   if ((event.target as Element).closest('[data-copy-version]') !== null) return
@@ -383,11 +393,11 @@ export function SidebarRoot({
         <div className={css.newSessionRow}>
           {renderSlot('sidebar.session.action', { wide }, {
             children: (
-              <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500} side={captionTooltipSide} disabled={wide}>
+              <Tooltip label={newSessionLabel} shortcutKeys={newShortcut?.keys} delayMs={500} side={captionTooltipSide} disabled={wide}>
                 <button
                   type="button"
                   className={css.newSession}
-                  aria-label={t('session.new.label')}
+                  aria-label={newSessionLabel}
                   aria-keyshortcuts={newShortcut?.aria}
                   onClick={openNewSession}
                 >
@@ -395,7 +405,7 @@ export function SidebarRoot({
                     {wide
                       ? <IconNewChatOutlineMedium size={14} />
                       : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
-                    {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
+                    {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{aiControl ? newSessionLabel : t('session.new')}</span>}
                   </span></span>
                   {wide && newShortcut !== undefined && newShortcut.keys.length > 0 && <span className={css.newSessionShortcut} aria-hidden="true">
                     <ShortcutKeys keys={newShortcut.keys} />

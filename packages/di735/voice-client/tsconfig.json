@@ -11,6 +11,9 @@
     {
       "path": "../../../vendor/cordis"
     },
+    { "path": "../../core/agent" },
+    { "path": "../../attachment/attachment" },
+    { "path": "../../util/crypto" },
     {
       "path": "../../api/remotes/tsconfig.client.json"
     },

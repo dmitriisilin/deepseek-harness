@@ -647,3 +647,39 @@
     transition: none;
   }
 }
+
+.aiControlPinned,
+.aiControlRecent {
+  padding: 4px 10px 10px;
+}
+
+.aiControlPinned h2,
+.aiControlRecent h2 {
+  margin: 12px 8px 6px;
+  font-size: 14px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.aiControlProjectsToggle,
+.aiControlProjectLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding-inline: 8px;
+  color: inherit;
+  font: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.aiControlProjectLink {
+  width: 100%;
+  text-align: start;
+}
+
+@media (max-width: 767px) {
+  .aiControl { font-size: 16px; }
+  .aiControl [role='treeitem'] { min-height: 44px; }
+}

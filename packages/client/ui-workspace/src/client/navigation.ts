@@ -335,6 +335,16 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void {
+    if (workspaceId === undefined && options === undefined &&
+        typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red') {
+      const signal = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+      void this.sessions.create().then((sessionId) => {
+        if (!signal.aborted) this.replaceMain(sessionId, signal, 'reveal')
+      }).catch((error: unknown) => {
+        if (!signal.aborted) this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })
+      })
+      return
+    }
     const { agentPreset, ...draft } = options ?? {}
     const draftOptions = options === undefined ? undefined : draft
     const initializeDraft = draftOptions !== undefined && (draftOptions.prompt !== undefined
@@ -464,13 +474,26 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   private async restoreSelection(workspaces: WorkspaceSnapshot, sessions: SessionListState): Promise<void> {
     const saved = this.selection.getSnapshot()
+    const summary = saved.sessionId === undefined ? undefined : sessions.byId[saved.sessionId]
+    const workspace = summary === undefined ? undefined
+      : workspaces.items.find(item => item.sessionIds.includes(summary.id))
+    const aiControl = typeof window !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
+    const quickStart = aiControl && (window.matchMedia('(max-width: 600px)').matches
+      || (saved.sessionId === undefined && saved.subagentAddress === undefined))
+    if (quickStart) {
+      const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+      this.restorationNavigation = navigation
+      const sessionId = summary?.blank === true && workspace === undefined
+        && !workspaces.archivedSessionIds.includes(summary.id)
+        ? summary.id
+        : await this.sessions.create()
+      if (!navigation.aborted) this.replaceMain(sessionId, navigation, 'preserve')
+      return
+    }
     if (saved.subagentAddress !== undefined) {
       this.replaceMain(saved.subagentAddress, this.lifetime.signal, 'preserve')
       return
     }
-    const summary = saved.sessionId === undefined ? undefined : sessions.byId[saved.sessionId]
-    const workspace = summary === undefined ? undefined
-      : workspaces.items.find(item => item.sessionIds.includes(summary.id))
     if (summary !== undefined && (!summary.blank || workspace === undefined)) {
       this.replaceMain(summary.id, this.lifetime.signal, 'preserve')
       return

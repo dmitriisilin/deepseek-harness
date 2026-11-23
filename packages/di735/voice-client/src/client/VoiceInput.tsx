@@ -1,10 +1,12 @@
 /** Click-to-record toolbar activity; transcripts remain in the original Session draft. */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { TokenSpan } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ComposerSubmitGates, TokenSpan } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TranscriptionRequest } from '@deepseek-ai/dsh-experimental-api-speech-to-text/types'
 import type { SpeechPreparationOptions, SpeechProviderId, SpeechSelection, SpeechSelectionPatch, Transcript } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import { VOICE_FILENAME_PREFIX } from '../voice-file.ts'
 import { audioBase64, type Recording } from './audio.ts'
 import { failureText } from './failure-text.ts'
 import type { MicrophoneDevice } from './microphone-device.ts'
@@ -19,6 +21,7 @@ import css from './VoiceInput.module.css'
 export interface VoiceInputActions {
   /** Open the voice bundle details without starting preparation. */
   openSettings: () => void
+  registerSubmitGate?: (...args: Parameters<ComposerSubmitGates['register']>) => (() => void) | undefined
   /** @returns one microphone operation owned by the plugin lifecycle. */
   createRecording: () => Recording
   /** Remember the browser microphone used by previews and subsequent recordings. */
@@ -40,7 +43,7 @@ export interface VoiceInputInjected extends VoiceInputActions {
 }
 
 /** Composer-owned expansion and draft actions; preferences stay in plugin settings. */
-export type VoiceInputProps = Pick<PropsRuntime<'conversation.input.activity'>, 'sessionId' | 'inputActions' | 'locked' | 'onActiveChange'>
+export type VoiceInputProps = Pick<PropsRuntime<'conversation.input.activity'>, 'sessionId' | 'inputActions' | 'locked' | 'onActiveChange' | 'onSubmitReadyChange' | 'addFiles'>
   & PropsLocale<typeof NS> & InjectFace<VoiceInputInjected>
 
 type Phase = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'feedback'
@@ -62,7 +65,7 @@ async function disposeRecording(capture: Recording): Promise<void> {
 }
 
 /** Render a compact microphone or an expanded capture, transcription, or retry row. */
-export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
+export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, onSubmitReadyChange, addFiles, registerSubmitGate,
   createRecording, transcribe, openSettings, useSpeechReadiness, usePluginNavigation, t }: VoiceInputProps) {
   const readiness = useSpeechReadiness(value => value), catalog = readiness.catalog
   const navigable = usePluginNavigation(present => present)
@@ -73,11 +76,13 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
   const [setupOpen, setSetupOpen] = useState(false)
   useEffect(() => { if (usable) setSetupOpen(false) }, [usable])
   const current = useRef<ActiveRecording>(), generation = useRef(0)
+  const pendingFile = useRef<File>()
   const expanded = phase !== 'idle'
   useLayoutEffect(() => { onActiveChange(expanded); return () => { onActiveChange(false) } }, [expanded, onActiveChange])
 
   const cancel = (): void => {
     generation.current++
+    pendingFile.current = undefined
     const active = current.current
     current.current = undefined
     if (active) { clearTimeout(active.timer); active.abort.abort(); void disposeRecording(active.capture) }
@@ -98,6 +103,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
       window.removeEventListener('blur', blur); document.removeEventListener('visibilitychange', visibility)
       document.removeEventListener('keydown', escape)
       generation.current++
+      pendingFile.current = undefined
       const active = current.current
       current.current = undefined
       if (active) { clearTimeout(active.timer); active.abort.abort(); void disposeRecording(active.capture) }
@@ -105,7 +111,15 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
   }, [sessionId])
 
   const feedback = (text: string): void => { setMessage(text); setPhase('feedback') }
-  const finish = async (): Promise<void> => {
+  const addPendingFile = (): void => {
+    const file = pendingFile.current
+    if (file === undefined || addFiles === undefined) throw new Error(t('empty'))
+    const error = addFiles([file])
+    if (error !== null) throw new Error(error)
+    pendingFile.current = undefined
+    setPhase('idle')
+  }
+  const finish = async (asAttachment = false): Promise<void> => {
     const active = current.current
     if (!active || active.phase !== 'recording') return
     active.phase = 'transcribing'
@@ -113,8 +127,17 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
     clearTimeout(active.timer); setPhase('transcribing')
     try {
       const audio = await active.capture.stop(active.maxDurationSeconds)
-      if (run !== generation.current) return
-      if (audio.byteLength > active.maxAudioBytes) { feedback(t('tooLarge')); return }
+      if (run !== generation.current) throw new DOMException('Recording cancelled', 'AbortError')
+      if (audio.byteLength > active.maxAudioBytes) {
+        if (asAttachment) throw new Error(t('tooLarge'))
+        feedback(t('tooLarge'))
+        return
+      }
+      if (asAttachment) {
+        pendingFile.current = new File([audio], `${VOICE_FILENAME_PREFIX}${randomUUID()}.wav`, { type: 'audio/wav' })
+        addPendingFile()
+        return
+      }
       const result = await transcribe({ audioBase64: audioBase64(audio), ...active.selection }, active.abort.signal)
       if (run !== generation.current) return
       if (!result.ok) { feedback(t('failed', { message: result.error.message })); return }
@@ -124,10 +147,26 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange,
     } catch (failure) {
       await disposeRecording(active.capture)
       if (run === generation.current) feedback(failureText(failure, t))
+      if (asAttachment) throw failure
     } finally { if (run === generation.current) current.current = undefined }
   }
+  useLayoutEffect(() => {
+    if (!registerSubmitGate || !addFiles) return
+    return registerSubmitGate(sessionId, () => {
+      if (pendingFile.current) return Promise.resolve().then(addPendingFile)
+      if (current.current?.phase === 'recording') return finish(true)
+    })
+  })
+  const submitReady = registerSubmitGate !== undefined && addFiles !== undefined
+    && (phase === 'recording' || (phase === 'feedback' && pendingFile.current !== undefined))
+  useLayoutEffect(() => {
+    onSubmitReadyChange?.(submitReady)
+    return () => { onSubmitReadyChange?.(false) }
+  }, [onSubmitReadyChange, submitReady])
+
   const start = async (): Promise<void> => {
     if (!catalog || !usable || locked || current.current) return
+    pendingFile.current = undefined
     const run = ++generation.current
     const active: ActiveRecording = { capture: createRecording(), abort: new AbortController(),
       span: inputActions.captureInsertion(), selection: catalog.selection,

@@ -16,7 +16,7 @@ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   HoverCard, IconArchiveOutlineRegular,
   IconFolderCloseRegular, IconFolderOpenRegular,
-  IconNewChatOutlineRegular, IconPinFillRegular,
+  IconNewChatOutlineRegular, IconPinFillRegular, IconPinOutlineRegular,
   IconTriangleRightFillRegular, IconUnarchiveOutlineRegular, relativeTime, StateDot, Tooltip, useRowDragPreview,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -224,6 +224,8 @@ type ProjectRowItemProps = {
   containsCurrentDescendant?: boolean
   onToggle: () => void
   onCreate: (workspaceId: WorkspaceId) => void
+  pinned?: boolean | undefined
+  onPin?: (() => void) | undefined
   /** Present only for real Workspace rows in the grouped view. */
   drag?: WorkspaceRowDragProps | undefined
   /** Host account home; POSIX home-rooted hover paths display as `~`. */
@@ -278,7 +280,7 @@ function WorkspaceProjectRow({ workspaceId, ...props }: ProjectRowItemProps & { 
 }
 
 function ProjectRow({
-  group, containsCurrentDescendant = false, onToggle, drag: offeredDrag, home, newShortcut, t, actions,
+  group, containsCurrentDescendant = false, onToggle, drag: offeredDrag, home, newShortcut, t, actions, pinned, onPin,
   renderFactorySlot, useContextMenuTarget, useContextMenu,
 }: Omit<ProjectRowItemProps, 'onCreate'> & { actions: ProjectRowActions }) {
   const { getTriggerProps } = useContextMenu()
@@ -295,6 +297,7 @@ function ProjectRow({
   const ownRow = (
     <div
       className={clsx(css.projectRow, menuOpen && css.menuOpen)}
+      id={onPin ? `ai-control-project-${group.key}` : undefined}
       data-row-key={`workspace:${group.key}`}
       role="treeitem"
       aria-expanded={row.expanded}
@@ -321,6 +324,11 @@ function ProjectRow({
         <span className={css.title}>{label}</span>
       </span>
       <span className={css.rowActions}>
+        {onPin && <button type="button" className={css.iconButton}
+          aria-label={t('aiControl.pinProject')} aria-pressed={pinned ?? false}
+          onClick={(event) => { event.stopPropagation(); onPin() }}>
+          {pinned ? <IconPinFillRegular size={16} /> : <IconPinOutlineRegular size={16} />}
+        </button>}
         {workspaceMenuTarget !== undefined && (
           renderFactorySlot('contextMenu.button', {
             target: { kind: 'workspace', value: { ...workspaceMenuTarget, displayTitle: label } },

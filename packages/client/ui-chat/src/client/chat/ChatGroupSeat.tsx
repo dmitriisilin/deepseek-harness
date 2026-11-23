@@ -138,7 +138,8 @@ export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGrou
   const { expanded: open, setExpanded: setOpen } = useDisclosure()
   const firstKey = members?.[0]?.key ?? ''
   const bottom = props.useChatNodeBottom(firstKey)
-  const deferCollapse = bottom === true && props.deferCollapse
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
+  const deferCollapse = !aiControl && bottom === true && props.deferCollapse
   const presentation = props.useChatNodeProcess(firstKey)
   const turnLocation = props.useChatNode(firstKey, (node) => {
     const location = node?.location
@@ -148,13 +149,13 @@ export const ChatGroupSeat = memo(function ChatGroupSeat({ groupKey, useChatGrou
   const grouped = props.usePresentation(policy => policy.stepGrouping === 'collapsed'
     || (policy.stepGrouping === 'history' && turnLocation?.status !== 'open' && !deferCollapse))
   const reason = turnLocation?.end?.data.reason.kind
-  const alwaysOpen = presentation?.turnClosed === false || presentation?.hasInterleavedInput === true
+  const alwaysOpen = (!aiControl && presentation?.turnClosed === false) || presentation?.hasInterleavedInput === true
     || reason === 'aborted' || reason === 'interrupted' || reason === 'error'
   const spec = presentation?.spec
   const selectOpen = useCallback((state: Readonly<ChatStoreState>) => spec !== undefined
     && turnProcessOpen(state, spec, deferCollapse), [spec, deferCollapse])
   const storedOpen = props.useStore(selectOpen)
-  const outerHidden = foldCompleted && presentation?.turnClosed === true && spec !== undefined
+  const outerHidden = foldCompleted && (aiControl || presentation?.turnClosed === true) && spec !== undefined
     && !alwaysOpen && !storedOpen
   const revealOuter = useCallback(() => {
     if (spec !== undefined && !alwaysOpen) props.actions.setTurnProcessOpen(spec.turn, spec.answerStep ?? 0, true)

@@ -209,7 +209,13 @@ export function ConversationSessionHeader({
             <div className={css.headerUtilities}>
               {renderSlot('conversation.session.header.utilities', {})}
               {renderFactorySlot('contextMenu.button', {
-                target: { kind: 'sessionHeader', value: { sessionId } },
+                target: { kind: 'sessionHeader', value: {
+                  sessionId,
+                  ...(typeof window !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
+                    && window.matchMedia('(max-width: 600px)').matches
+                    ? { views: tabs.map(tab => ({ id: tab.id, label: tab.label, select: () => { selectView(tab.id) } })) }
+                    : {}),
+                } },
                 label: t('header.more'), className: css.headerMenuButton, size: 'sm',
               })}
             </div>

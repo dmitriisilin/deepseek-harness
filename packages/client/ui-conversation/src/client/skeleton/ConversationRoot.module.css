@@ -645,3 +645,55 @@
 .embeddedBody[data-content-phase='settling'] .composerSeat {
   visibility: hidden;
 }
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .titleRow {
+    min-height: 48px;
+  }
+
+  :global(html[data-ai-control='red']) .crumbCurrent {
+    font-size: 17px;
+  }
+
+  :global(html[data-ai-control='red']) .headerMenuButton {
+    width: 44px;
+    height: 44px;
+  }
+
+  :global(html[data-ai-control='red']) .headerMenuButton svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  :global(html[data-ai-control='red']) .tabs:has(.viewsMoreAnchor) {
+    display: none;
+  }
+}
+
+.aiControlHeroMode { display: contents; }
+
+@media (max-width: 600px) {
+  :global(html[data-ai-control='red']) .heroWorkspaceRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    padding-inline: 14px;
+  }
+
+  :global(html[data-ai-control='red']) .heroWorkspaceRow > button {
+    justify-self: start;
+  }
+
+  :global(html[data-ai-control='red']) .aiControlHeroMode {
+    display: block;
+    min-width: 0;
+  }
+
+  :global(html[data-ai-control='red']) .aiControlHeroMode:empty {
+    display: none;
+  }
+
+  :global(html[data-ai-control='red']) .crumbCurrent {
+    margin-inline-start: 8px;
+  }
+}

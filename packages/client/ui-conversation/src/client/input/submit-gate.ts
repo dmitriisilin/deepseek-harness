@@ -37,6 +37,7 @@ export class SubmitGateRegistry implements ComposerSubmitGates {
   run(sessionId: SessionId): Promise<unknown> | undefined {
     const registered = this.gates.get(sessionId)
     if (registered === undefined || registered.size === 0) return undefined
-    return Promise.all([...registered].map(gate => gate())).then(() => undefined)
+    const pending = [...registered].map(gate => gate()).filter(work => work !== undefined)
+    return pending.length === 0 ? undefined : Promise.all(pending).then(() => undefined)
   }
 }
