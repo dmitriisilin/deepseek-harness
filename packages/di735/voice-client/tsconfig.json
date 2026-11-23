@@ -42,10 +42,10 @@
       "path": "../../typert/protocol"
     },
     {
-      "path": "../api-speech-to-text"
+      "path": "../../experimental/api-speech-to-text"
     },
     {
-      "path": "../speech-to-text"
+      "path": "../../experimental/speech-to-text"
     },
     {
       "path": "../../api/gateway/tsconfig.client.json"

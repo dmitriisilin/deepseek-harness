@@ -8,7 +8,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/experimental/client-ui-voice-input"
+    "directory": "packages/di735/voice-client"
   },
   "type": "module",
   "main": "lib/index.js",

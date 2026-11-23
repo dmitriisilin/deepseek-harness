@@ -9,7 +9,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
-    "directory": "packages/experimental/voice-input-bundle"
+    "directory": "packages/di735/voice-bundle"
   },
   "type": "module",
   "main": "lib/index.js",
@@ -36,12 +36,6 @@
     "src"
   ],
   "license": "MIT",
-  "dependencies": {
-    "@deepseek-ai/dsh-experimental-speech-to-text": "workspace:*",
-    "@deepseek-ai/dsh-experimental-speech-to-text-sensevoice": "workspace:*",
-    "@deepseek-ai/dsh-experimental-api-speech-to-text": "workspace:*",
-    "@deepseek-ai/dsh-experimental-client-ui-voice-input": "workspace:*"
-  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"
   },

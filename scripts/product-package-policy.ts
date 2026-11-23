@@ -45,6 +45,8 @@ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolic
   'packages/test-support/loader-smoke': { category: 'test', reason: 'Published plugin Loader smoke-test harness.' },
   'packages/test-support/remote-mock': { category: 'test', reason: 'Published typed Remote test proxies.' },
   'packages/test-support/session-snapshot': { category: 'test', reason: 'Published Session snapshot replay harness.' },
+  'packages/di735/voice-client': { category: 'optional', reason: 'Microphone capture composed only by the opt-in voice bundle.' },
+  'packages/di735/voice-bundle': { category: 'optional', reason: 'Default-disabled voice composition enabled by an explicit profile bundle selection.' },
   'packages/client/web': { category: 'web-distribution', reason: 'Browser boot kernel bundled into the Web distribution.' },
   'packages/client/ui-dockkit': { category: 'web-distribution', reason: 'Layout library bundled into the Web distribution.' },
   'packages/util/package-manifest': { category: 'declarations', reason: 'Shared package metadata declarations have no runtime mount.' },
