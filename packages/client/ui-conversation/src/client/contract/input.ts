@@ -14,6 +14,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { QuoteSummary } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ArbitrateKey, ArbitrateOutcome, DraftQuote, Occurrence, ReferenceInsert, TokenSpan } from './draft-editor.ts'
 import type { InputSubmitMode, MessageSubmission } from './composer-submission.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Attachment payload passed to a claimed command submission. */
 export type SubmitAttachment =
@@ -163,6 +164,32 @@ declare module '@deepseek-ai/cordis' {
      * @mode bail
      */
     'slash/input-insert-text'(request: InsertTextRequest): true | undefined
+  }
+}
+
+/**
+ * Work one plugin finishes before the composer freezes a draft for a submit
+ * attempt (for example stopping a recording and attaching its bytes). The
+ * composer awaits every registered gate, then reads the draft again: a gate may
+ * add attachments or text through the published input actions.
+ */
+export type ComposerSubmitGate = () => Promise<unknown> | undefined
+
+/** Registration face for plugin-owned submit barriers, published on the Client context. */
+export interface ComposerSubmitGates {
+  /**
+   * Band one gate to one Session; it runs on every submit attempt for that Session.
+   * @param sessionId - target Session identity.
+   * @param gate - callback returning pending work, or undefined when nothing blocks.
+   * @returns disposer removing the gate from that Session.
+   */
+  register(sessionId: SessionId, gate: ComposerSubmitGate): () => void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Plugin-owned submit barriers consulted before one composer submit attempt freezes its draft. */
+    composerSubmit: ComposerSubmitGates
   }
 }
 

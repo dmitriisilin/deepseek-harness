@@ -25,6 +25,7 @@ import type { ComposerBlocks } from '../contract/composer-blocks.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
+import type { SubmitGateRegistry } from './submit-gate.ts'
 import { reportMessageSubmission } from './submission-analytics.ts'
 import { readConversationDraft } from '../stores.ts'
 
@@ -65,6 +66,7 @@ export class InputHub implements SessionInputResolver {
   constructor(
     private readonly rootCtx: Context,
     private readonly t: TranslateNS<'conversation'>,
+    private readonly submitGates?: SubmitGateRegistry,
   ) {}
 
   /**
@@ -122,6 +124,7 @@ export class InputHub implements SessionInputResolver {
         })
       },
       messageSubmitted: (submission) => { reportMessageSubmission(this.rootCtx, submission) },
+      beforeSubmit: () => this.submitGates?.run(session.sessionId),
       inputTriggers: () => this.controller(actx),
       popup: () => this.popup(actx),
       inbox: session.projections.faceOf('inbox') as ObservableSnapshot<InboxState | undefined>,

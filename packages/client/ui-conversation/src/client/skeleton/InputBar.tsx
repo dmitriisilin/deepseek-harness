@@ -541,7 +541,7 @@ export const InputBar = memo(function InputBar({
               {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
             </div>
             {input === undefined || sessionId === undefined ? null : <div className={activity ? css.activityExpanded : css.activity}>
-              {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity })}
+              {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity, addFiles })}
             </div>}
             {interruptible && !cancelDenied && (
               <Tooltip label={t('input.stop')} shortcutKeys={stopKeys} side="top" delayMs={500} disabled={stopAction === undefined} portal>

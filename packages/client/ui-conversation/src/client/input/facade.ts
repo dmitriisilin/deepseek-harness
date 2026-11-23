@@ -47,6 +47,12 @@ export interface SessionInputDeps {
   submissionState?: () => MessageSubmissionState
   /** Notify one ordinary message attempt before reference serialization. */
   messageSubmitted?: (submission: MessageSubmission) => void
+  /**
+   * Pending plugin-owned work awaited before a submit attempt freezes its
+   * draft (for example stopping a recording and attaching its bytes).
+   * Undefined = nothing blocks this attempt.
+   */
+  beforeSubmit?: (() => Promise<unknown> | undefined) | undefined
   /** Enter adjudication face resolver; absent/undefined answer = every '/' line falls to the default sink. */
   inputTriggers?: (() => InputTriggerController | undefined) | undefined
   /** PopupSelect shell face resolver (dismissal on submit lock / escape). */
@@ -167,6 +173,8 @@ export class SessionInputShell implements SessionInput {
     return this.draftEditor.projection
   }
   private rev = 0
+  /** One pending plugin submit gate; later submits wait for its attempt. */
+  private gatePending = false
   private readonly unregister: () => void
   private noticeSeq = 0
   private lastPublishedDraft: DraftSnapshot | undefined
@@ -394,13 +402,33 @@ export class SessionInputShell implements SessionInput {
   /**
    * Enter adjudication + submit transaction + default sink with the draft, its
    * reference chips, and its attachments as the user sent them. Effects fan
-   * out from the machine; this method only feeds the event. Lock entry
+   * out from the machine; this method only feeds the event. Plugin submit
+   * gates run first: while one is pending, repeated submits are ignored and
+   * the draft stays editable, then the attempt re-reads it. Lock entry
    * (adjudicating/submitting/sending) force-closes the transient layers: the
    * popup dismisses and the menu tracks frozen.
    * @param allowEmpty - explicitly admit empty continuation input through the default sink.
    */
-  submit(mode: InputSubmitMode = 'queue', source?: 'click' | 'enter', allowEmpty = false): void {
-    if (this.disposed) return
+  submit(mode: InputSubmitMode = 'queue', source?: 'click' | 'enter', allowEmpty = false, gated = false): void {
+    if (this.disposed || this.gatePending) return
+    if (!gated) {
+      let pending: Promise<unknown> | undefined
+      try { pending = this.deps.beforeSubmit?.() } catch (error: unknown) { this.notify('error', errorText(error)); return }
+      if (pending !== undefined) {
+        this.gatePending = true
+        void pending.then(
+          () => {
+            this.gatePending = false
+            if (!this.disposed) this.submit(mode, source, allowEmpty, true)
+          },
+          (error: unknown) => {
+            this.gatePending = false
+            this.notify('error', errorText(error))
+          },
+        )
+        return
+      }
+    }
     const timestamp = Date.now()
     let state: MessageSubmissionState | undefined
     if (this.snapshot.phase === 'plain' && (this.snapshot.draft.trim() !== '' || this.attachmentIds.length > 0)) {

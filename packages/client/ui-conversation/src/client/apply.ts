@@ -28,6 +28,7 @@ import type { ReferenceInsert } from './contract/draft-editor.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
 import { relativizeToCwd, workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
+import { SubmitGateRegistry } from './input/submit-gate.ts'
 import { ConversationController, UnsupportedImageMediaTypeError, isImageMediaType } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
@@ -300,7 +301,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }, 'ui-conversation: fixed stop reference')
   })
 
-  const inputHub = new InputHub(ctx, t)
+  const submitGates = new SubmitGateRegistry()
+  ctx.provide('composerSubmit', submitGates)
+  const inputHub = new InputHub(ctx, t, submitGates)
   const composerBlocks = new ComposerBlockRegistry()
 
   ctx.inject(['commandUi'], (scope) => {

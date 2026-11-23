@@ -633,6 +633,13 @@ export interface InputControlOwnerProps {
 export interface InputActivityOwnerProps extends InputControlOwnerProps {
   /** @param active - whether the occupant needs the toolbar width before the submit action. */
   onActiveChange: (active: boolean) => void
+  /**
+   * Add one picked batch to the draft, with the composer rail's contract: a
+   * string is the localized rejection copy, null means accepted. An activity
+   * such as voice input uses it to attach recorded bytes before a submit
+   * escalates. Undefined without a live Session.
+   */
+  addFiles: ((files: readonly File[], directories?: ReadonlySet<File>) => string | null) | undefined
 }
 
 /** Full props of the resident composer bar. */
