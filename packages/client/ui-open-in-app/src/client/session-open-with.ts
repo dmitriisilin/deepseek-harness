@@ -41,7 +41,9 @@ export function registerSessionOpenWith(
       })),
     }]
   }
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   for (const target of ['session', 'sessionHeader'] as const) {
+    if (aiControl && target === 'session') continue
     ctx.effect(() => ctx.contextMenus.register({
       id: 'open-in-app.openWith', target, order: 500,
       observe: () => [controller.apps, controller.operation, ctx.sessions.list, ctx.locale],

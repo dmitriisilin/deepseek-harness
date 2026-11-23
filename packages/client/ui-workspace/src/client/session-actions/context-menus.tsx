@@ -17,6 +17,7 @@ type Actions = Omit<PinSessionInjected & ArchiveSessionInjected, 'hooks'>
  */
 export function registerSessionMenus(ctx: Context, actions: Actions): void {
   const t = ctx.locale.bind('workspace')
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   const register = (
     id: string,
     order: number,
@@ -48,20 +49,22 @@ export function registerSessionMenus(ctx: Context, actions: Actions): void {
     id: 'rename', label: t('rename'), icon: { key: 'workspace.rename' }, commandId: 'session.rename' as ShortcutCommandId,
     run: () => { actions.requestSessionRename(target.sessionId, target.displayTitle) },
   }] : [])
-  register('fork', 300, ['session/fork'], target => allowed(target, 'session/fork') ? [{
-    id: 'fork', label: t('menu.fork'), icon: { key: 'workspace.fork' }, commandId: 'session.fork' as ShortcutCommandId,
-    run: () => { actions.forkSession(target.sessionId) },
-  }] : [])
-  register('id', 450, [], target => [{
-    id: 'copy', label: t('menu.sessionId'), icon: { key: 'workspace.copy' }, separatorBefore: true,
-    run: () => actions.copySessionId(target.sessionId),
-  }])
+  if (!aiControl) {
+    register('fork', 300, ['session/fork'], target => allowed(target, 'session/fork') ? [{
+      id: 'fork', label: t('menu.fork'), icon: { key: 'workspace.fork' }, commandId: 'session.fork' as ShortcutCommandId,
+      run: () => { actions.forkSession(target.sessionId) },
+    }] : [])
+    register('id', 450, [], target => [{
+      id: 'copy', label: t('menu.sessionId'), icon: { key: 'workspace.copy' }, separatorBefore: true,
+      run: () => actions.copySessionId(target.sessionId),
+    }])
+  }
   register('archive', 600, ['workspace/archiveSession', 'workspace/unarchiveSession'], (target) => {
     const restoring = archived(target)
     if (!allowed(target, restoring ? 'workspace/unarchiveSession' : 'workspace/archiveSession')) return []
     return [{
       id: 'archive', label: t(restoring ? 'menu.unarchiveSession' : 'menu.archiveSession'),
-      icon: { key: restoring ? 'workspace.unarchive' : 'workspace.archive' }, separatorBefore: true, afterContent: true,
+      icon: { key: restoring ? 'workspace.unarchive' : 'workspace.archive' }, separatorBefore: !aiControl, afterContent: true,
       ...restoring ? {} : { commandId: 'session.archive' as ShortcutCommandId },
       run: () => { (restoring ? actions.unarchiveSession : actions.archiveSession)(target.sessionId) },
     }]

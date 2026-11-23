@@ -32,3 +32,5 @@
 ## GPT-6.2 Sol и Claude Opus 5.5 на staging
 
 [Патч провайдеров](providers-staging.patch.yml) настраивает OpenAI Responses API и Anthropic Messages API. Добавить его в патч профиля `web` каждой красной службы. Обе службы читают `AI_CONTROL_OPENAI_API_KEY` и `AI_CONTROL_ANTHROPIC_API_KEY` из своих локальных файлов окружения. При исчерпании кредитов OpenAI в чате виден оригинальный текст ошибки провайдера. Для теста использовать пустой чат и короткое сообщение.
+
+Модель по умолчанию задаётся отдельно в патче профиля `web` в секции `agent-default-model`: у Димы пара `deepseek-official / deepseek-flash`, у Кати `anthropic / claude-opus-5-5`. Выбор модели в диалоге записывается в сессию и становится следующим умолчанием для этого профиля.
