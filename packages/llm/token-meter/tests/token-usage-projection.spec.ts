@@ -549,3 +549,29 @@ describe('contextPressure session projection', () => {
     expect(pressure(ctx, session).projectedTokens).toBe(0)
   })
 })
+
+it('estimates mixed-model session costs and keeps unknown rates visible', async () => {
+  const { ctx, session } = await harness()
+  try {
+    for (const [step, provider, model, usage] of [
+      [1, 'deepseek-official', 'deepseek-flash', { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 1000 }],
+      [2, 'anthropic', 'claude-opus-5-5', { inputTokens: 1000, outputTokens: 200, cacheWriteTokens: 500 }],
+      [3, 'private-gateway', 'unknown-model', { inputTokens: 1000, outputTokens: 200 }],
+    ] as const) {
+      startStep(session, 1, step)
+      session.append('request/context', { provider, model })
+      usageChunk(session, usage, 1, step)
+      session.append('assistant/message', {
+        turn: 1, step, stream: [], usage,
+        message: createMessage({ role: 'assistant', content: [], source: { kind: 'model', provider, model } }),
+      }, { surfaceOp: 'append' })
+      session.append('step/end', { turn: 1, step })
+    }
+    const cost = ctx.sessionProjections.snapshot(session).values.tokenCost
+    expect(cost?.pricedRequests).toBe(2)
+    expect(cost?.unpricedRequests).toBe(1)
+    expect(cost?.estimatedUsd).toBeCloseTo(0.011046, 10)
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})

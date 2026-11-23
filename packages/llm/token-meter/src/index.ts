@@ -39,6 +39,7 @@ import type { MeasurementState } from './measurement-projection.ts'
 import { commitSurfaceTokens, planSurfaceTokens } from './surface-fold.ts'
 import type { MeterSurfaceNode } from './surface-fold.ts'
 import { priceSurface } from './route-pricing.ts'
+import { tokenCostProjectionDefinition } from './cost-projection.ts'
 
 export type * from './types.ts'
 
@@ -104,6 +105,7 @@ export class TokenMeter extends Service {
     const ctx = this.ctx
     this.measurementProjectionHandle = await ctx.sessionProjections.register(measurementProjectionDefinition)
     await ctx.sessionProjections.register(tokenUsageProjectionDefinition)
+    await ctx.sessionProjections.register(tokenCostProjectionDefinition)
     this.contextPressureProjectionHandle = await ctx.sessionProjections.register(contextPressureProjectionDefinition)
     await ctx.sessionProjections.register(contextBreakdownProjectionDefinition)
 

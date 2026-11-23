@@ -479,6 +479,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       : workspaces.items.find(item => item.sessionIds.includes(summary.id))
     const aiControl = typeof window !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
     const quickStart = aiControl && (window.matchMedia('(max-width: 600px)').matches
+      || workspace?.firstUseDefault === true
       || (saved.sessionId === undefined && saved.subagentAddress === undefined))
     if (quickStart) {
       const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
@@ -505,8 +506,9 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       && !workspaces.archivedSessionIds.includes(summary.id)) {
       sessionId = await this.restoreBlank(workspace.workspaceId, summary.id)
     }
-    let target = workspace?.workspaceId ?? recentWorkspace(workspaces.items, sessions.byId)
-    if (target === undefined && workspaces.items.length === 0 && sessions.ids.length === 0) {
+    const projects = aiControl ? workspaces.items.filter(item => !item.firstUseDefault) : workspaces.items
+    let target = workspace?.workspaceId ?? recentWorkspace(projects, sessions.byId)
+    if (!aiControl && target === undefined && workspaces.items.length === 0 && sessions.ids.length === 0) {
       const prepared = await this.initializeDefaultWorkspace(navigation)
       if (navigation.aborted) return
       target = prepared?.workspaceId

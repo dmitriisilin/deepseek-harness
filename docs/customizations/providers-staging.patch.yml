@@ -1,0 +1,24 @@
+- id: llm-pi-ai
+  config:
+    providers:
+      openai:
+        api: openai-responses
+        baseURL: https://api.openai.com/v1
+        apiKeyEnv: AI_CONTROL_OPENAI_API_KEY
+        reasoning: medium
+        models:
+          - id: gpt-6.2-sol
+            name: GPT-6.2 Sol
+            input: [text, image]
+            contextWindow: 1050000
+            maxTokens: 128000
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+              xhigh: xhigh
+      anthropic:
+        apiKeyEnv: AI_CONTROL_ANTHROPIC_API_KEY
+        reasoning: medium
+        models:
+          - id: claude-opus-5-5

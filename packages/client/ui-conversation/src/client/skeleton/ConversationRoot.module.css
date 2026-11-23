@@ -670,8 +670,6 @@
   }
 }
 
-.aiControlHeroMode { display: contents; }
-
 @media (max-width: 600px) {
   :global(html[data-ai-control='red']) .heroWorkspaceRow {
     display: grid;
@@ -682,15 +680,6 @@
 
   :global(html[data-ai-control='red']) .heroWorkspaceRow > button {
     justify-self: start;
-  }
-
-  :global(html[data-ai-control='red']) .aiControlHeroMode {
-    display: block;
-    min-width: 0;
-  }
-
-  :global(html[data-ai-control='red']) .aiControlHeroMode:empty {
-    display: none;
   }
 
   :global(html[data-ai-control='red']) .crumbCurrent {

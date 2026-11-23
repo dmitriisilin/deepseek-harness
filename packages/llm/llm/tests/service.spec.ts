@@ -135,6 +135,8 @@ describe('LlmRuntime', () => {
   it('distinguishes exhausted account quota from transient rate limiting', () => {
     for (const detail of [
       'insufficient_quota',
+      '429 credit_balance_exhausted',
+      '429 project_spend_limit_exceeded',
       'account balance depleted',
       'usage-limit-exceeded',
       'out of credits',

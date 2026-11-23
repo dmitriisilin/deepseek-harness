@@ -939,16 +939,17 @@ export function WorkspaceBrowser({
   const shortcutState = useWorkspaceShortcuts(state => state)
   // Ordering remains live while the rail or search replaces the list body.
   const list = useSessions(state => state)
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   const storedWorkspaces = useWorkspaces(state => state.items)
   // The resolved name, not `t`, is the memo dependency: the bound seat keeps
   // its identity across a language switch.
   const defaultWorkspaceName = t('workspace.defaultName')
   const workspaces = useMemo(
-    () => storedWorkspaces.map(workspace => ({
+    () => storedWorkspaces.filter(workspace => !aiControl || !workspace.firstUseDefault).map(workspace => ({
       ...workspace,
       title: workspaceDisplayTitle(workspace.title, defaultWorkspaceName),
     })),
-    [storedWorkspaces, defaultWorkspaceName],
+    [storedWorkspaces, defaultWorkspaceName, aiControl],
   )
   const workspacePhase = useWorkspaces(state => state.phase)
   const workspaceStreamState = useWorkspaces(state => state.state)
@@ -957,7 +958,6 @@ export function WorkspaceBrowser({
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
-  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   const projectsCollapsed = useStore(s => s.aiControlProjectsCollapsed ?? false)
   const workspacePins = useStore(s => s.aiControlWorkspacePins)
   const groupBy = useStore(s => aiControl ? 'workspace-tree' : s.groupBy)

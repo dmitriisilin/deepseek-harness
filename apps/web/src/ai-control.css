@@ -5,12 +5,6 @@
 }
 
 @media (max-width: 600px) {
-  html[data-ai-control='red'] [data-composer-stat='usage'] {
-    display: none;
-  }
-}
-
-@media (max-width: 600px) {
   html[data-ai-control='red'] [data-sidebar-right-expand] {
     display: none;
   }

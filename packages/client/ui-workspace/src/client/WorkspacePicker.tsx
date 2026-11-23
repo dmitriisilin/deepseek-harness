@@ -78,7 +78,10 @@ export function WorkspacePickFlow({
   // Without an owner-provided anchor, the menu remains hidden.
   const absentAnchor = useRef<HTMLElement>(null)
   const workspaceSnapshot = useWorkspaces(state => state)
-  const workspaces = workspaceSnapshot.items
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
+  const workspaceItems = workspaceSnapshot.items
+  const workspaces = useMemo(() => aiControl ? workspaceItems.filter(workspace => !workspace.firstUseDefault) : workspaceItems,
+    [aiControl, workspaceItems])
   const [errorOpen, setErrorOpen] = useState(false)
   const [modalError, setModalError] = useState<string | null>(null)
   const [flowOpen, setFlowOpen] = useState(false)

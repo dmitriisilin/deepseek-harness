@@ -21,11 +21,13 @@ type WorkspaceFeedFrame = Exclude<WorkspaceFollowFrame, { readonly type: 'replac
 /**
  * Project one authoritative Workspace entity into its Remote value.
  * @param workspace - authoritative registry entity.
+ * @param defaultWorkspaceId - identity of the automatic first-use registration.
  * @returns detached Workspace projection for Remote consumers.
  */
-export function workspaceView(workspace: Workspace): WorkspaceView {
+export function workspaceView(workspace: Workspace, defaultWorkspaceId?: WorkspaceId): WorkspaceView {
   return {
     workspaceId: workspace.id,
+    ...(workspace.id === defaultWorkspaceId ? { firstUseDefault: true as const } : {}),
     path: workspace.path,
     title: workspace.title,
     sessionIds: [...workspace.sessionIds],
@@ -34,10 +36,11 @@ export function workspaceView(workspace: Workspace): WorkspaceView {
   }
 }
 
-function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceView {
+function changedWorkspaceView(workspaceId: string, value: unknown, defaultWorkspaceId: WorkspaceId | undefined): WorkspaceView {
   const record: WorkspaceRecord = workspaceRecord.parse(value)
   return {
     workspaceId: WorkspaceId(workspaceId),
+    ...(workspaceId === defaultWorkspaceId ? { firstUseDefault: true as const } : {}),
     path: record.path,
     title: record.title,
     sessionIds: [...record.sessionIds],
@@ -74,7 +77,7 @@ export class WorkspaceFeed {
    */
   baseline(): WorkspaceBaseline {
     return {
-      items: this.ctx.workspaceRegistry.list().map(workspaceView),
+      items: this.ctx.workspaceRegistry.list().map(workspace => workspaceView(workspace, this.ctx.workspaceRegistry.defaultWorkspaceId)),
       archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds],
       pinnedSessionIds: [...this.ctx.workspaceRegistry.pinnedSessionIds],
     }
@@ -112,7 +115,7 @@ export class WorkspaceFeed {
           throw new Error(`committed Workspace registry references missing Workspace "${id}"`)
         }
         this.knownIds.add(id)
-        this.publish({ type: 'upsert', workspace: workspaceView(workspace) })
+        this.publish({ type: 'upsert', workspace: workspaceView(workspace, state.defaultWorkspaceId) })
       }
       this.order = nextOrder
       if (orderChanged) this.publish({ type: 'order', workspaceIds: [...state.workspaceIds] })
@@ -137,7 +140,7 @@ export class WorkspaceFeed {
     if (!this.knownIds.has(change.key)) return
     this.publish({
       type: 'upsert',
-      workspace: changedWorkspaceView(change.key, change.value),
+      workspace: changedWorkspaceView(change.key, change.value, this.ctx.workspaceRegistry.defaultWorkspaceId),
     })
   }
 

@@ -156,7 +156,7 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
           </span>
           <span className={css.titleGroup}>
             {/* Own element: keeps the headline text addressable apart from the badge. */}
-            <span>{aiControl ? 'AI Control' : t('hero.headline')}</span>
+            <span>{aiControl ? document.documentElement.dataset.aiControlTitle ?? 'AI Control' : t('hero.headline')}</span>
             {!aiControl && <span className={css.previewBadge}>{t('hero.preview')}</span>}
           </span>
         </div>

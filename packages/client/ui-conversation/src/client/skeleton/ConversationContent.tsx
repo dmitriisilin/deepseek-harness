@@ -66,9 +66,10 @@ export function ConversationContent(props: ConversationContentProps) {
     seatObserver.current.observe(scroller)
   }, [])
 
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   const sessionWorkspace = sessionId === undefined
     ? undefined
-    : workspaces.items.find(workspace => workspace.sessionIds.includes(sessionId))
+    : workspaces.items.find(workspace => (!aiControl || !workspace.firstUseDefault) && workspace.sessionIds.includes(sessionId))
   const pendingWorkspace = workspaces.items.find(
     workspace => workspace.workspaceId === pendingWorkspaceId,
   )
@@ -107,18 +108,17 @@ export function ConversationContent(props: ConversationContentProps) {
     ? undefined
     : workspaceDisplayTitle(storedChipTitle, t('workspace.defaultName'))
 
-  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   const quickChat = aiControl && sessionId !== undefined && chipTitle === undefined
-  const heroWorkspaceRow = (
+  const heroWorkspaceRow = quickChat ? null : (
     <div className={css.heroWorkspaceRow}>
-      {!quickChat && <WorkspaceChip
+      <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
         menuOpen={pickerOpen}
         onClick={() => { setPickerOpen(open => !open) }}
         t={t}
-      />}
-      {!quickChat && renderSlot('conversation.hero.workspace', {
+      />
+      {renderSlot('conversation.hero.workspace', {
         open: pickerOpen,
         anchorRef: pickerAnchor,
         selectedId: pendingWorkspaceId ?? sessionWorkspace?.workspaceId,
@@ -131,8 +131,7 @@ export function ConversationContent(props: ConversationContentProps) {
         },
         onClose: () => { setPickerOpen(false) },
       })}
-      {aiControl ? <div className={css.aiControlHeroMode}>{renderSlot('conversation.hero.agentPreset', {})}</div>
-        : renderSlot('conversation.hero.agentPreset', {})}
+      {!aiControl && renderSlot('conversation.hero.agentPreset', {})}
       {sessionId === undefined ? null : <div className={css.heroOptions}>{renderSlot('conversation.hero.options', {})}</div>}
     </div>
   )

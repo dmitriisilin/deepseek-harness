@@ -342,7 +342,7 @@ export function SidebarRoot({
             const icon = manifest && new URL('icon-ai-control-outline.svg', manifest.href).href
             return <span className={css.aiControlBrand}>
               {icon && <img src={icon} width={28} height={28} alt="" />}
-              AI Control
+              {document.documentElement.dataset.aiControlTitle ?? 'AI Control'}
             </span>
           }
           const identity = (

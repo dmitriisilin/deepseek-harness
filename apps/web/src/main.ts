@@ -15,6 +15,20 @@ const reportFailure = (reason: unknown): void => {
   void desktop.failed(reason instanceof Error ? reason.message : String(reason)).catch(console.error)
 }
 
+if (document.documentElement.dataset.aiControl === 'red') {
+  const names = new Map([
+    ['ai-control-staging-kate.di-storage.com', 'Kate’s AI Control'],
+    ['ai-control-staging-dima.di-storage.com', 'Dima’s AI Control'],
+    ['127.0.0.1:33942', 'Kate’s AI Control'],
+    ['127.0.0.1:33943', 'Dima’s AI Control'],
+  ])
+  const name = names.get(window.location.host)
+  if (name !== undefined) {
+    document.documentElement.dataset.aiControlTitle = name
+    document.title = name
+  }
+}
+
 try {
   const el = document.getElementById('root')
   if (el === null) throw new Error('web app: missing #root')

@@ -17,6 +17,8 @@ export type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-host-dir
 /** One durable Workspace projected for browser consumers. */
 export interface WorkspaceView {
   readonly workspaceId: WorkspaceId
+  /** True for the automatic first-use registration. */
+  readonly firstUseDefault?: true
   /** Canonical host directory path. */
   readonly path: string
   /** User-visible title. */

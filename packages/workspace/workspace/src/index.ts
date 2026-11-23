@@ -299,6 +299,11 @@ export class WorkspaceRegistry extends Service {
     return this.entities.get(id)
   }
 
+  /** Identity of the automatic first-use registration, including after a rename. */
+  get defaultWorkspaceId(): WorkspaceId | undefined {
+    return this.requireState().defaultWorkspaceId
+  }
+
   /**
    * Synchronous workspace projection in durable registry order. Every
    * entity's `sessionIds` getter is already filtered by the startup/live

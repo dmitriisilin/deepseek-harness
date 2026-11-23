@@ -79,7 +79,7 @@ const pressureFrom = (usage: TokenUsage): number =>
   usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
 
 /** The usage one durable Assistant settlement reports for its attempt, if any. */
-function usageOf(event: SessionEvent): TokenUsage | undefined {
+export function usageOf(event: SessionEvent): TokenUsage | undefined {
   if (event.type === 'assistant/message' && event.data.usage !== undefined) return event.data.usage
   if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') return undefined
   return lastAssistantStreamChunk(event.data.stream, 'usage')?.usage

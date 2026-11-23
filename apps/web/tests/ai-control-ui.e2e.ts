@@ -36,6 +36,14 @@ it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('shows the mobile chat 
         await row.click()
         const menu = page.getByRole('button', { name: width < 600 ? 'More actions' : 'More conversation views', exact: true })
         await menu.waitFor({ timeout: 15_000 })
+        const cost = page.locator('[data-composer-stat="usage"]').getByRole('button')
+        await cost.waitFor()
+        expect(await cost.innerText()).toMatch(/^≈\s*\$0\./)
+        if (width === 360 && colorScheme === 'light') {
+          await cost.click()
+          await page.getByText('Estimated cost', { exact: true }).waitFor()
+          await cost.click()
+        }
         if (output) await page.screenshot({ path: join(output, `chat-${width}-${colorScheme}.png`), animations: 'disabled' })
         if (width < 600) {
           const answer = page.getByText('DONE', { exact: true })
@@ -135,6 +143,24 @@ it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('creates a project, a p
   await pinnedHistory.waitFor({ state: 'hidden' })
 })
 
+it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('keeps a legacy default Workspace out of projects after reopening', async () => {
+  const scaffold = await launchWebScaffold({ firstUse: true })
+  onTestFinished(() => scaffold.close())
+  const legacy = await scaffold.ctx.workspaceRegistry.initializeDefault(async () => scaffold.workspaceCwd)
+  expect(legacy).toBeDefined()
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await browser.newPage({ viewport: { width: 360, height: 780 }, locale: 'en-US', isMobile: true, hasTouch: true })
+  await page.goto(scaffold.authenticatedUrl)
+  await page.locator('[data-composer-input][contenteditable=true]').waitFor()
+  await page.reload()
+  await page.locator('[data-composer-input][contenteditable=true]').waitFor()
+  await revealNavigationDrawer(page, 'en')
+  expect(await page.getByRole('button', { name: 'Projects', exact: true }).isVisible()).toBe(true)
+  expect(await page.getByRole('button', { name: /New session in / }).count()).toBe(0)
+  expect(scaffold.ctx.workspaceRegistry.get(legacy!.id)).toBeDefined()
+})
+
 it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('opens without a Workspace and fits the Russian project controls after explicit selection', async () => {
   const scaffold = await launchWebScaffold()
   onTestFinished(() => scaffold.close())
@@ -152,6 +178,7 @@ it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('opens without a Worksp
   const input = page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Напишите сообщение"]')
   await input.waitFor()
   expect((await input.boundingBox())?.height).toBeGreaterThanOrEqual(84)
+  expect(await page.getByText('Стандартный режим', { exact: true }).isVisible()).toBe(false)
   expect(await page.locator('[data-sidebar-right-expand]').isVisible()).toBe(false)
   expect((await page.locator('[data-sidebar-opener] svg').boundingBox())?.width).toBeGreaterThanOrEqual(28)
   const iconUrls = await page.evaluate(async () => {
@@ -191,6 +218,7 @@ it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('opens without a Worksp
   await page.getByRole('button', { name: 'Новая сессия в Рабочая область по умолчанию', exact: true }).click()
   const workspaceLabel = page.locator('[data-composer-seat]').getByText('Рабочая область по умолчанию', { exact: true })
   await workspaceLabel.waitFor()
+  expect(await page.getByText('Стандартный режим', { exact: true }).isVisible()).toBe(false)
   expect(await workspaceLabel.evaluate(label => label.scrollWidth <= label.clientWidth)).toBe(true)
   if (output) await page.screenshot({ path: join(output, 'ai-control-mobile-project-360-ru.png'), animations: 'disabled' })
 })

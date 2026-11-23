@@ -300,13 +300,22 @@ export const ActivityPill = memo(function ActivityPill({ useChat, useProjection,
 export const UsagePill = memo(function UsagePill({ useProjection, usePerformanceUsage, t }: StatPillProps) {
   const mode = usePerformanceUsage(value => value)
   const usage = useProjection('tokenUsage')
+  const cost = useProjection('tokenCost')
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   // Gated on actual token activity: a session whose steps all settled without
   // billing (e.g. every request failed) shows no usage pill.
   if (usage === undefined || (billedInputTokens(usage) === 0 && usage.outputTokens === 0)) return null
   const cacheHit = cacheHitPercent(usage)
   const cacheHitText = cacheHit !== null ? t('stats.cacheHit', { percent: cacheHit }) : null
   const icon = <IconDatabaseOutlineRegular />
-  if (mode === 'compact') {
+  const estimatedCost = aiControl && cost !== undefined && cost.pricedRequests + cost.unpricedRequests > 0
+    ? cost.pricedRequests === 0 ? '—'
+      : `≈ ${new Intl.NumberFormat(undefined, {
+        style: 'currency', currency: 'USD', maximumFractionDigits: cost.estimatedUsd < 0.01 ? 6 : 3,
+      }).format(cost.estimatedUsd)}`
+    : null
+  if (aiControl && estimatedCost === null) return null
+  if (!aiControl && mode === 'compact') {
     return cacheHitText === null ? null : <PlainPill stat="usage" icon={icon} {...reading(cacheHitText, null)} />
   }
   // Same aggregate as the Turn pill's totalTokens: every prompt-side billing bucket plus output.
@@ -316,7 +325,7 @@ export const UsagePill = memo(function UsagePill({ useProjection, usePerformance
     <DialogPill
       stat="usage"
       icon={icon}
-      {...reading(totalText, cacheHitText)}
+      {...(estimatedCost === null ? reading(totalText, cacheHitText) : reading(estimatedCost, null))}
       title={t('stats.dialog.usageTitle')}
       titleValue={exactCount(total, t)}
     >
@@ -326,6 +335,14 @@ export const UsagePill = memo(function UsagePill({ useProjection, usePerformance
           session that never wrote cache drops the row, as the per-turn panel
           drops its absent fields. */}
       <dl className={dialogCss.details} data-session-stats-usage>
+        {estimatedCost !== null && <>
+          <dt>{t('stats.dialog.estimatedCost')}</dt>
+          <dd>{estimatedCost}</dd>
+          {cost !== undefined && cost.unpricedRequests > 0 && <>
+            <dt>{t('stats.dialog.unpricedRequests')}</dt>
+            <dd>{cost.unpricedRequests}</dd>
+          </>}
+        </>}
         {cacheHit !== null && (
           <>
             <dt>{t('message.turnUsage.cacheHit')}</dt>

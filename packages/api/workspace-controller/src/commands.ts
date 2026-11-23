@@ -47,10 +47,10 @@ export class WorkspaceCommands {
       try {
         const existing = await this.ctx.workspaceRegistry.resolveByPath(request.path)
         if (existing !== undefined) {
-          return { workspace: workspaceView(existing), created: false }
+          return { workspace: workspaceView(existing, this.ctx.workspaceRegistry.defaultWorkspaceId), created: false }
         }
         const workspace = await this.ctx.workspaceRegistry.create(request.path)
-        return { workspace: workspaceView(workspace), created: true }
+        return { workspace: workspaceView(workspace, this.ctx.workspaceRegistry.defaultWorkspaceId), created: true }
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error
         throw new RemoteError(
@@ -86,7 +86,7 @@ export class WorkspaceCommands {
         }
         await workspace.setTitle(title)
       }
-      return { workspace: workspaceView(workspace) }
+      return { workspace: workspaceView(workspace, this.ctx.workspaceRegistry.defaultWorkspaceId) }
     })
   }
 
@@ -148,7 +148,7 @@ export class WorkspaceCommands {
         { cause: error },
       )
     }
-    return { workspace: workspaceView(workspace) }
+    return { workspace: workspaceView(workspace, this.ctx.workspaceRegistry.defaultWorkspaceId) }
   }
 
   /**
