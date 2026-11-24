@@ -41,6 +41,7 @@ export function audioBase64(bytes: Uint8Array): string {
 export class Recording {
   private stream: MediaStream | undefined
   private recorder: MediaRecorder | undefined
+  private stopped: Promise<void> | undefined
   private context: AudioContext | undefined
   private analyser: AnalyserNode | undefined
   private samples = new Float32Array(256)
@@ -94,14 +95,20 @@ export class Recording {
     try {
       this.recorder = new MediaRecorder(this.stream as MediaStream)
       this.recorder.ondataavailable = (event) => { if (!this.lifetime.signal.aborted && event.data.size > 0) this.chunks.push(event.data) }
+      const stopped = Promise.withResolvers<void>()
+      this.stopped = stopped.promise
+      this.recorder.onstop = () => {
+        stopped.resolve()
+        this.interrupted(onError)
+      }
       this.recorder.onerror = () => { this.interrupted(onError) }
-      this.recorder.start()
+      this.recorder.start(1000)
     } catch (error) { await this.dispose(); throw error }
   }
 
   private interrupted(onError: ((error: RecordingError) => void) | undefined): void {
     if (this.lifetime.signal.aborted) return
-    void this.dispose().catch(() => undefined)
+    if (!this.recorder || !onError) void this.dispose().catch(() => undefined)
     try { onError?.(new RecordingError('interrupted')) } catch (error) {
       console.error('Speech recording error handler failed', error)
     }
@@ -136,13 +143,10 @@ export class Recording {
   async stop(maxDurationSeconds: number): Promise<Uint8Array<ArrayBuffer>> {
     const recorder = this.recorder
     const context = this.context
-    if (!recorder || !context || recorder.state !== 'recording') { await this.dispose(); throw new RecordingError('empty') }
+    if (!recorder || !context || !this.stopped) { await this.dispose(); throw new RecordingError('empty') }
     try {
-      await new Promise<void>((resolve, reject) => {
-        recorder.onstop = () => { resolve() }
-        recorder.onerror = () => { reject(new RecordingError('empty')) }
-        recorder.stop()
-      })
+      if (recorder.state !== 'inactive') recorder.stop()
+      await this.stopped
       this.stream?.getTracks().forEach((track) => { track.stop() })
       this.lifetime.signal.throwIfAborted()
       const blob = new Blob(this.chunks, { type: recorder.mimeType })
@@ -175,7 +179,7 @@ export class Recording {
 
   private async release(): Promise<void> {
     this.lifetime.abort(new RecordingError('cancelled'))
-    if (this.recorder?.state === 'recording') this.recorder.stop()
+    if (this.recorder && this.recorder.state !== 'inactive') this.recorder.stop()
     this.stream?.getTracks().forEach((track) => { track.stop() })
     this.stream = undefined
     const context = this.context

@@ -90,17 +90,11 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
   }
   useEffect(() => {
     setPending(''); setMessage(''); setPhase('idle'); setSetupOpen(false)
-    const blur = (): void => { if (current.current?.phase === 'recording') cancel() }
-    const visibility = (): void => {
-      if (document.hidden && current.current && current.current.phase !== 'transcribing') cancel()
-    }
     const escape = (event: KeyboardEvent): void => {
       if (event.key === 'Escape' && current.current) { event.preventDefault(); cancel() }
     }
-    window.addEventListener('blur', blur); document.addEventListener('visibilitychange', visibility)
     document.addEventListener('keydown', escape)
     return () => {
-      window.removeEventListener('blur', blur); document.removeEventListener('visibilitychange', visibility)
       document.removeEventListener('keydown', escape)
       generation.current++
       pendingFile.current = undefined
@@ -109,6 +103,34 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
       if (active) { clearTimeout(active.timer); active.abort.abort(); void disposeRecording(active.capture) }
     }
   }, [sessionId])
+
+  useEffect(() => {
+    if (phase !== 'recording' || !navigator.wakeLock) return
+    let active = true
+    let requesting = false
+    let lock: WakeLockSentinel | undefined
+    const acquire = async (): Promise<void> => {
+      if (!active || document.hidden || requesting || lock?.released === false) return
+      requesting = true
+      try {
+        const granted = await navigator.wakeLock.request('screen')
+        if (!active || document.hidden) await granted.release()
+        else lock = granted
+      } catch {
+        // Recording continues when the browser declines a screen lock.
+      } finally {
+        requesting = false
+      }
+    }
+    const visible = (): void => { void acquire() }
+    document.addEventListener('visibilitychange', visible)
+    void acquire()
+    return () => {
+      active = false
+      document.removeEventListener('visibilitychange', visible)
+      void lock?.release().catch(() => undefined)
+    }
+  }, [phase])
 
   const feedback = (text: string): void => { setMessage(text); setPhase('feedback') }
   const addPendingFile = (): void => {
@@ -119,7 +141,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
     pendingFile.current = undefined
     setPhase('idle')
   }
-  const finish = async (asAttachment = false): Promise<void> => {
+  const finish = async (mode: 'dictate' | 'send' | 'recover' = 'dictate'): Promise<void> => {
     const active = current.current
     if (!active || active.phase !== 'recording') return
     active.phase = 'transcribing'
@@ -129,32 +151,42 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
       const audio = await active.capture.stop(active.maxDurationSeconds)
       if (run !== generation.current) throw new DOMException('Recording cancelled', 'AbortError')
       if (audio.byteLength > active.maxAudioBytes) {
-        if (asAttachment) throw new Error(t('tooLarge'))
+        if (mode === 'send') throw new Error(t('tooLarge'))
         feedback(t('tooLarge'))
         return
       }
-      if (asAttachment) {
+      if (mode !== 'dictate' || (registerSubmitGate && addFiles)) {
         pendingFile.current = new File([audio], `${VOICE_FILENAME_PREFIX}${randomUUID()}.wav`, { type: 'audio/wav' })
+      }
+      if (mode === 'send') {
         addPendingFile()
+        return
+      }
+      if (mode === 'recover') {
+        feedback(t('recordingRecovered'))
         return
       }
       const result = await transcribe({ audioBase64: audioBase64(audio), ...active.selection }, active.abort.signal)
       if (run !== generation.current) return
-      if (!result.ok) { feedback(t('failed', { message: result.error.message })); return }
-      if (result.value.text === '') { feedback(t('empty')); return }
+      if (!result.ok) {
+        feedback(pendingFile.current ? t('recordingRecovered') : t('failed', { message: result.error.message }))
+        return
+      }
+      if (result.value.text === '') { feedback(pendingFile.current ? t('recordingRecovered') : t('empty')); return }
+      pendingFile.current = undefined
       if (!inputActions.insertText(result.value.text, active.span)) { setPending(result.value.text); feedback(t('conflict')); return }
       setPhase('idle')
     } catch (failure) {
       await disposeRecording(active.capture)
-      if (run === generation.current) feedback(failureText(failure, t))
-      if (asAttachment) throw failure
+      if (run === generation.current) feedback(mode !== 'send' && pendingFile.current ? t('recordingRecovered') : failureText(failure, t))
+      if (mode === 'send') throw failure
     } finally { if (run === generation.current) current.current = undefined }
   }
   useLayoutEffect(() => {
     if (!registerSubmitGate || !addFiles) return
     return registerSubmitGate(sessionId, () => {
-      if (pendingFile.current) return Promise.resolve().then(addPendingFile)
-      if (current.current?.phase === 'recording') return finish(true)
+      if (pendingFile.current && current.current?.phase !== 'transcribing') return Promise.resolve().then(addPendingFile)
+      if (current.current?.phase === 'recording') return finish('send')
     })
   })
   const submitReady = registerSubmitGate !== undefined && addFiles !== undefined
@@ -176,8 +208,13 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
     try {
       await active.capture.start((failure) => {
         if (run !== generation.current || current.current !== active || active.phase === 'transcribing') return
+        if (active.phase === 'recording' && registerSubmitGate && addFiles) {
+          void finish('recover')
+          return
+        }
         current.current = undefined
         clearTimeout(active.timer); active.abort.abort()
+        void disposeRecording(active.capture)
         feedback(failureText(failure, t))
       })
       if (run !== generation.current || current.current !== active) return
@@ -215,7 +252,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
       ? <Button className={css.inlineAction} size="sm" type="button" onClick={() => {
         if (inputActions.insertText(pending, inputActions.captureInsertion())) { setPending(''); setPhase('idle') }
       }}>{t('insert')}</Button>
-      : <Button className={css.roundButton} size="sm" type="button" aria-label={t('retryRecording')} disabled={!usable || locked}
+      : pendingFile.current ? null : <Button className={css.roundButton} size="sm" type="button" aria-label={t('retryRecording')} disabled={!usable || locked}
         onClick={() => { void start() }}><IconMicrophoneOutlineRegular size={18} /></Button>)}
   </div>
 }
