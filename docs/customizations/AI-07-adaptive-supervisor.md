@@ -1,4 +1,4 @@
-# Adaptive Supervisor
+# AI-07. Adaptive Supervisor
 
 The staging experiment is enabled by setting `AI_CONTROL_SUPERVISOR=1` in the service environment. Remove the variable and restart the service to restore the original routing. The experiment runs only on the official DeepSeek Flash route.
 
@@ -42,3 +42,10 @@ The supervisor flag enables the journal. Use `AI_CONTROL_TURN_LOG=1` on an exper
 - The classifier chooses a fixed reason code. Its reason is a model prediction. Provider errors, deadlines and invalid output have separate deterministic codes and use the standard route.
 
 These records omit transcript text, file names, prompts, tool arguments and provider error bodies.
+
+
+## Review before rebase
+
+The loop integration lives in `packages/core/agent-loop`. Compare upstream support for per-turn tool admission, temporary effort and correlated diagnostics. Replace the fork code when upstream can classify admitted text after voice clarification, retain the selected provider, suppress tool admission on direct turns and preserve the normal loop on fallback. Check both voice baselines and the text replay with the new implementation.
+
+The follow-on design adds explicit capability requests, renewable per-turn budgets, evidence checks and checkpoint reviews. A budget limits work until the next review. It does not grant permissions. The current release classifies the initial turn and records measurements.
