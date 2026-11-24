@@ -22,6 +22,7 @@ import { AgentModel, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-ag
 import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   LlmError,
+  ReasoningEffortId,
   createAssistantMessage,
   createDeveloperMessage,
   errorChain,
@@ -41,6 +42,7 @@ import { ReactLoopInbox } from './inbox.ts'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { AssistantStreamAttempt } from './assistant-stream.ts'
 import { SystemPromptProjection } from './runtime-context.ts'
+import { superviseTurn } from './supervisor.ts'
 
 /** Projected facts consumed by this driver; registration stays with the factory. */
 interface LoopProjections {
@@ -72,6 +74,7 @@ type PreparedStep =
     selection: Readonly<ModelSelection>
     /** Admission shared by the step's declarations and dispatch; the turn disposes it after the step. */
     toolSet: ResolvedToolSet
+    toolsSuppressed?: true
   }
 
 /** Remove adapter-derived values before plugins propose the next request config. */
@@ -314,6 +317,31 @@ export class ReactLoopAgent implements Agent {
       if (decision.kind === 'reject') {
         toolSet.dispose()
         return decision
+      }
+      if (typeof process !== 'undefined' && process.env.AI_CONTROL_SUPERVISOR === '1' && target === 'next-turn'
+        && selection.provider === 'deepseek-official' && selection.model === 'deepseek-flash') {
+        const previous = this.session.deriveMessages().findLast(
+          (message): message is UserMessage => message.role === 'user' && 'source' in message && message.source.kind === 'user',
+        )
+        const route = await superviseTurn(options => this.loopCtx.llm.stream(options), decision.messages, previous, signal)
+        signal.throwIfAborted()
+        if (route !== 'standard') {
+          const controlledSelection = route === 'direct'
+            ? { ...selection, reasoningEffort: ReasoningEffortId('off') }
+            : selection
+          const restricted: ResolvedToolSet = { dispose: () => toolSet.dispose(), view: () => new Map() }
+          const controlledAssembly = await this.loopCtx.systemPrompt.assemble({
+            ...assembleContextFor(this, signal), modelSelection: controlledSelection, toolSet: restricted,
+          })
+          return {
+            ...decision,
+            assembly: { ...controlledAssembly, tools: [] },
+            selection: controlledSelection,
+            toolSet: restricted,
+            toolsSuppressed: true,
+            startsRequestSeries: true,
+          }
+        }
       }
       return { ...decision, assembly, selection, toolSet }
     } catch (error: unknown) {
@@ -600,7 +628,7 @@ export class ReactLoopAgent implements Agent {
           for (const context of result.additionalContexts) {
             this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context])
           }
-          return result.concluded ? { kind: 'completed' } : null
+          return result.concluded || decision.toolsSuppressed ? { kind: 'completed' } : null
         } catch (error: unknown) {
           if (!(error instanceof ToolBatchExecutionError)) throw error
           for (const context of error.partial.additionalContexts) {
