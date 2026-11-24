@@ -293,7 +293,7 @@ export class PermissionPresetService extends TypertRemoteService {
     return {
       options: this.names.map(name => this.optionOf(name)),
       defaultOptions: Object.keys(this.presets).map(name => this.optionOf(name)),
-      defaultPreset: this.defaultSettings().defaultPreset,
+      defaultPreset: this.defaultPreset,
     }
   }
 
@@ -321,6 +321,9 @@ export class PermissionPresetService extends TypertRemoteService {
    * a mounted settings provider.
    */
   get defaultPreset(): string {
+    if (typeof process !== 'undefined' && process.env.AI_CONTROL_DEFAULT_AUTO_REVIEW === '1' && this.autoAdmit !== undefined) {
+      return AUTO_PRESET
+    }
     return this.defaultSettings().defaultPreset
   }
 
@@ -437,6 +440,7 @@ export class PermissionPresetService extends TypertRemoteService {
     }
     if (preset === null && sandbox === null && approval === null && !seeded) {
       const name = this.defaultPreset
+      if (name === AUTO_PRESET) this.autoAdmit?.()
       const spec = this.resolve(name)
       session.append('permission/preset', { preset: name })
       setSandboxMode(session, spec.sandbox)
