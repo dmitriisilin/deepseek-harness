@@ -10,11 +10,19 @@ const user = createUserMessage({
 })
 
 describe('AI Control Supervisor', () => {
-  it.each([['DIRECT', 'direct'], ['DEEP', 'deep'], ['STANDARD', 'standard'], ['DIRECT with Bash', 'standard']])(
+  it.each([
+    ['DIRECT', 'direct', 'general_question'],
+    ['DEEP', 'deep', 'complex_reasoning'],
+    ['STANDARD', 'standard', 'standard_unspecified'],
+    ['SOURCES', 'standard', 'needs_sources'],
+    ['ACTION', 'standard', 'needs_action'],
+    ['UNCLEAR', 'standard', 'ambiguous_input'],
+    ['DIRECT with Bash', 'standard', 'invalid_output'],
+  ])(
     'validates the route %s from a single tool-free Flash call',
-    async (reply, route) => {
+    async (reply, route, reason) => {
       const stream = vi.fn(async function* (_options: GenerateOptions) { yield* textResponse(reply) })
-      await expect(superviseTurn(stream, [user], undefined, new AbortController().signal)).resolves.toBe(route)
+      await expect(superviseTurn(stream, [user], undefined, new AbortController().signal)).resolves.toEqual({ route, reason })
       expect(stream).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
         provider: 'deepseek-official', model: 'deepseek-flash', reasoningEffort: 'off',
       }))
@@ -25,7 +33,7 @@ describe('AI Control Supervisor', () => {
   it('falls back on provider error and propagates caller cancellation', async () => {
     const stream = vi.fn(() => { throw new Error('unavailable') })
     const controller = new AbortController()
-    await expect(superviseTurn(stream, [user], undefined, controller.signal)).resolves.toBe('standard')
+    await expect(superviseTurn(stream, [user], undefined, controller.signal)).resolves.toEqual({ route: 'standard', reason: 'provider_error' })
     controller.abort()
     await expect(superviseTurn(stream, [user], undefined, controller.signal)).rejects.toThrow()
   })

@@ -50,7 +50,7 @@ async function clarifyTranscript(ctx: Context, agent: Agent, transcript: string,
 
 /** Preserve original attachments and append local transcripts to the admitted user messages. */
 export function apply(ctx: Context): void {
-  ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+  ctx.on('agent/pre-step', async ({ agent, signal, turn }, next) => {
     const decision = await next()
     if (decision.kind !== 'enter') return decision
     const messages = []
@@ -61,6 +61,8 @@ export function apply(ctx: Context): void {
         if (block.type !== 'file' || !voiceFilename.test(block.attachment.name)) continue
         const ref = block.attachment
         let transcript: string | undefined
+        const started = performance.now()
+        let inferenceMs: number | undefined
         try {
           if (ref.bytes < 46 || ref.bytes > maxBytes) throw new Error('Voice recording has an invalid size')
           const audio = new Uint8Array(ref.bytes)
@@ -73,11 +75,24 @@ export function apply(ctx: Context): void {
           validateWave(audio, maxSeconds)
           const spec = ctx.speechToText.resolve({ audio, providerId: 'whisper-local' as SpeechProviderId })
           if (spec.provider.info.location !== 'host-local') throw new Error('Voice provider must be local')
-          transcript = (await ctx.speechToText.transcribe(spec, signal)).text.trim()
+          const result = await ctx.speechToText.transcribe(spec, signal)
+          inferenceMs = Math.round(result.inferenceSeconds * 1000)
+          transcript = result.text.trim()
         } catch {
           signal.throwIfAborted()
         }
+        const recognized = performance.now()
         const clarified = transcript ? await clarifyTranscript(ctx, agent, transcript, signal) : transcript
+        if (typeof process !== 'undefined' && (Reflect.get(process.env, 'AI_CONTROL_SUPERVISOR') === '1'
+          || Reflect.get(process.env, 'AI_CONTROL_TURN_LOG') === '1')) {
+          console.info(JSON.stringify({
+            event: 'ai-control/stt', sessionId: agent.session.id, turn,
+            durationMs: Math.round(recognized - started), inferenceMs,
+            clarificationMs: Math.round(performance.now() - recognized),
+            status: transcript === undefined ? 'failed' : transcript === '' ? 'empty'
+              : clarified === undefined ? 'rejected' : clarified === transcript ? 'recognized' : 'adjusted',
+          }))
+        }
         if (transcript && clarified === undefined) return { kind: 'reject' }
         const text = clarified === undefined ? '[Voice message could not be transcribed.]'
           : clarified === '' ? '[Voice message contains no recognizable speech.]'

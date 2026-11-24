@@ -64,6 +64,17 @@ type Phase =
 
 type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
 
+interface TurnDiagnostics {
+  started: number
+  supervisor?: Awaited<ReturnType<typeof superviseTurn>> & { durationMs: number }
+  firstTextMs?: number
+  effort?: string
+  preparationMs?: number
+  requests: number
+  tools: number
+  toolBatchMs: number
+}
+
 type PreparedStep =
   | { kind: 'reject' }
   | {
@@ -289,7 +300,11 @@ export class ReactLoopAgent implements Agent {
     }
   }
 
-  private async preStep(target: InboxTarget, position: { turn: number; step: number }): Promise<PreparedStep> {
+  private async preStep(
+    target: InboxTarget,
+    position: { turn: number; step: number },
+    diagnostics?: TurnDiagnostics,
+  ): Promise<PreparedStep> {
     /* v8 ignore next -- private callers establish the running phase before proposing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
     const signal = this.phase.abort.signal
@@ -318,12 +333,15 @@ export class ReactLoopAgent implements Agent {
         toolSet.dispose()
         return decision
       }
-      if (typeof process !== 'undefined' && process.env.AI_CONTROL_SUPERVISOR === '1' && target === 'next-turn'
+      if (diagnostics && process.env.AI_CONTROL_SUPERVISOR === '1' && target === 'next-turn'
         && selection.provider === 'deepseek-official' && selection.model === 'deepseek-flash') {
         const previous = this.session.deriveMessages().findLast(
           (message): message is UserMessage => message.role === 'user' && 'source' in message && message.source.kind === 'user',
         )
-        const route = await superviseTurn(options => this.loopCtx.llm.stream(options), decision.messages, previous, signal)
+        const started = performance.now()
+        const policy = await superviseTurn(options => this.loopCtx.llm.stream(options), decision.messages, previous, signal)
+        diagnostics.supervisor = { ...policy, durationMs: Math.round(performance.now() - started) }
+        const { route } = policy
         signal.throwIfAborted()
         if (route !== 'standard') {
           const controlledSelection = route === 'direct'
@@ -373,12 +391,16 @@ export class ReactLoopAgent implements Agent {
     }
     phase.turn = turn
     let turnEnds: TurnEndReason | null = null
+    const diagnostics: TurnDiagnostics | undefined = typeof process !== 'undefined'
+      && (process.env.AI_CONTROL_SUPERVISOR === '1' || process.env.AI_CONTROL_TURN_LOG === '1')
+      ? { started: performance.now(), requests: 0, tools: 0, toolBatchMs: 0 }
+      : undefined
     let target: InboxTarget = 'next-turn'
     try {
       while (true) {
         signal.throwIfAborted()
         const step = phase.step + 1
-        const decision = await this.preStep(target, { turn, step })
+        const decision = await this.preStep(target, { turn, step }, diagnostics)
         if (decision.kind === 'reject') {
           turnEnds = { kind: 'blocked' }
           return false
@@ -392,6 +414,9 @@ export class ReactLoopAgent implements Agent {
             return false
           }
           signal.throwIfAborted()
+          if (diagnostics && diagnostics.preparationMs === undefined) {
+            diagnostics.preparationMs = Math.round(performance.now() - diagnostics.started)
+          }
           this.session.append('step/start', { turn, step })
           phase.step = step
           const toolRecovery = new ToolCallRecovery()
@@ -401,7 +426,7 @@ export class ReactLoopAgent implements Agent {
           try {
             // max-tokens is sticky: once any step hits the ceiling, later steps
             // that complete normally must not downgrade the turn outcome.
-            const stepEnd = await this.step(decision)
+            const stepEnd = await this.step(decision, diagnostics)
             // max-tokens stays sticky: a later completed step must not
             // downgrade the turn outcome.
             if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
@@ -451,6 +476,13 @@ export class ReactLoopAgent implements Agent {
       }
       this.throwError(error)
     } finally {
+      if (diagnostics) {
+        const { started, ...metrics } = diagnostics
+        console.info(JSON.stringify({
+          event: 'ai-control/turn', sessionId: this.session.id, turn, status: turnEnds?.kind,
+          policyVersion: 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
+        }))
+      }
       try {
         // oxlint-disable-next-line typescript/no-non-null-assertion -- every exit assigns a turn ending
         this.session.append('turn/end', { turn, reason: turnEnds! })
@@ -466,7 +498,7 @@ export class ReactLoopAgent implements Agent {
     return true
   }
 
-  private async step(decision: Extract<PreparedStep, { kind: 'enter' }>): Promise<StepEndReason | null> {
+  private async step(decision: Extract<PreparedStep, { kind: 'enter' }>, diagnostics?: TurnDiagnostics): Promise<StepEndReason | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
@@ -521,6 +553,10 @@ export class ReactLoopAgent implements Agent {
       )
       let started = false
       try {
+        if (diagnostics) {
+          diagnostics.requests += 1
+          diagnostics.effort = request.reasoningEffort ?? 'adapter-default'
+        }
         const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
         signal.throwIfAborted()
         live.start()
@@ -528,6 +564,9 @@ export class ReactLoopAgent implements Agent {
         for await (const chunk of stream) {
           signal.throwIfAborted()
           live.push(chunk)
+          if (diagnostics && diagnostics.firstTextMs === undefined && chunk.type === 'text-delta' && chunk.text.trim()) {
+            diagnostics.firstTextMs = Math.round(performance.now() - diagnostics.started)
+          }
         }
         signal.throwIfAborted()
       } catch (error: unknown) {
@@ -619,6 +658,8 @@ export class ReactLoopAgent implements Agent {
 
         const toolCalls = message.content.filter(block => block.type === 'tool-call')
         if (toolCalls.length === 0) return { kind: 'completed' }
+        const toolsStarted = performance.now()
+        if (diagnostics) diagnostics.tools += toolCalls.length
         const maxParallelToolCalls = this.loopCtx.agentLoop.config.maxParallelToolCalls.get()
         try {
           const result = await this.loopCtx.tools.execute({
@@ -635,6 +676,8 @@ export class ReactLoopAgent implements Agent {
             this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context])
           }
           throw error.cause
+        } finally {
+          if (diagnostics) diagnostics.toolBatchMs += Math.round(performance.now() - toolsStarted)
         }
       } catch (error: unknown) {
         if (!live.ended) live.abandon()
