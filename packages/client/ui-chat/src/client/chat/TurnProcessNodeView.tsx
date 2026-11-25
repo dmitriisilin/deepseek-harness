@@ -17,7 +17,7 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
     : undefined
   const running = turn?.status === 'open'
     && typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
-  if (turn === undefined || (!running && turn.status !== 'closed')) return null
+  if (turn === undefined || (!running && turn.status !== 'closed') || (running && !turnProcess.hasContent)) return null
   const canCollapse = turnProcess.foldable && turnProcess.hasContent && (running || !turnProcessAlwaysOpen(node))
   const reason = turn.end?.data.reason.kind
   const stopped = reason === 'aborted' || reason === 'interrupted'
@@ -26,11 +26,11 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   const duration = elapsedMs === undefined || stopped || reason === 'error' ? undefined
     : formatRunDuration(elapsedMs, t)
   // Other end reasons retain elapsed time; only stops and failure replace it.
-  const label = running ? t('chat.deepDiving') : stopped ? t('message.stopped')
+  const label = running ? t('chat.workDetails') : stopped ? t('message.stopped')
     : reason === 'error' ? t('message.turnProcess.failed')
       : duration === undefined ? t('message.turnProcess.worked')
         : t('message.turnProcess.took')
-  const announcement = running ? t('chat.deepDiving') : stopped ? t('message.stopped')
+  const announcement = running ? t('chat.workDetails') : stopped ? t('message.stopped')
     : reason === 'error' ? t('message.turnProcess.failed')
       : t('message.turnProcess.worked')
   return (
@@ -58,7 +58,6 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
             <span key={index} className={part.numeric ? css.durationNumber : undefined}>{part.text}</span>
           ))}
         </span>
-        {running && <progress className={css.progress} aria-label={label} />}
         {canCollapse && <IconChevronDownOutlineRegular className={css.chevron} />}
       </button>
     </>

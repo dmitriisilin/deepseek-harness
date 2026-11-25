@@ -1,6 +1,7 @@
 /** Ordered Chat rows, local echoes, and running status share the flow slot's parent. */
 import { memo, type ReactElement } from 'react'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
+import { isVoiceRecordingName } from '@deepseek-ai/dsh-client-ui-primitives'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { ChatFlowSlotProps } from '../contract/slots.ts'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
@@ -43,7 +44,12 @@ export const ChatFlow = memo(function ChatFlow({
     const location = node?.location
     return (location?.kind === 'turn' || location?.kind === 'step') && location.turn.status === 'open'
   })
-  const holding = !running && latestTurnOpen
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
+  // The local echo is retired when its admitted user message with the transcript appears.
+  const voice = aiControl ? pendingInputs.find((item): item is PendingSubmission => isLocalSubmission(item)
+    && item.placement === 'transcript' && item.attachments.some(attachment =>
+    attachment.type === 'file' && isVoiceRecordingName(attachment.value.name))) : undefined
+  const holding = !running && latestTurnOpen && voice === undefined
   const seatProps = {
     nodeStore, useChatNode, useChatNodeBottom, useChatNodeProcess, usePresentation,
     useStore, actions, renderSlot, t, useGroupAction, deferCollapse,
@@ -93,8 +99,8 @@ export const ChatFlow = memo(function ChatFlow({
   // the status slot (hidden) until its actions row takes the slot in the same commit.
   return [
     ...rows, ...leadingRows, ...openingRows,
-    ...running || holding ? [<RunningStatus key="running" startTime={runningStartTime} paused={disconnected}
-      holding={holding} t={t} />] : [],
+    ...running || holding || voice !== undefined ? [<RunningStatus key="running" startTime={voice?.time ?? runningStartTime}
+      paused={disconnected} holding={holding} compact={aiControl} transcribing={voice !== undefined} t={t} />] : [],
     ...pendingRows,
   ]
 })

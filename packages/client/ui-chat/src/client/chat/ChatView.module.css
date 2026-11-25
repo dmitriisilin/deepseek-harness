@@ -430,3 +430,44 @@
     padding: 12px calc(var(--dsh-composer-side-clearance) + 8px);
   }
 }
+
+/* AI Control lane: the status reads as the first line of the answer that follows
+   it. It keeps the status slot's height and starts at the column's left edge, so
+   it never floats centered under the right-aligned bubble. Typography follows the
+   chat body (primary copy) one step quieter (secondary label), and only the
+   changing stage shimmers — the seconds stay legible. */
+.compactRunning {
+  box-sizing: border-box;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.runningStage {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.runningTime {
+  flex: none;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  font-variant-numeric: tabular-nums;
+}
+
+.runningProgress {
+  flex: none;
+  width: 40px;
+  height: 3px;
+  align-self: center;
+  border: 0;
+  accent-color: currentColor;
+}

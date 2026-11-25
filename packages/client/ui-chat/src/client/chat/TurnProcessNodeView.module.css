@@ -65,11 +65,3 @@
   max-width: 100%;
   padding-inline: 8px;
 }
-
-.progress {
-  flex: none;
-  width: clamp(32px, 12%, 64px);
-  height: 4px;
-  margin-inline-start: 8px;
-  accent-color: currentColor;
-}

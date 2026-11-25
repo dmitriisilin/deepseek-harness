@@ -39,9 +39,14 @@ it.skipIf(webSnapshotMode() === 'record').each([
     profile: { packages }, extraOverlayPath: overlay,
   })
   onTestFinished(async () => { await scaffold.close() })
+  const checkStatus = !mixed && !ambiguous && !interrupted && !dictate
+    && process.env.DSH_WEB_BRAND === 'ai-control-red'
+  const recognition = Promise.withResolvers<undefined>()
+  onTestFinished(() => { recognition.resolve(undefined) })
   const recognize = vi.fn(async (input: SpeechInput) => {
     expect(input.recognitionHints).toEqual(mixed ? undefined : ['DeepSeek', 'Opus'])
     expect(Buffer.from(input.audio).subarray(0, 4).toString()).toBe('RIFF')
+    if (checkStatus) await recognition.promise
     const text = ambiguous ? 'Чем отключаются DeepSig Flash и DeepSig Pro?' : 'Recorded locally'
     return { text, audioSeconds: 1, inferenceSeconds: 0.1 }
   })
@@ -160,6 +165,20 @@ it.skipIf(webSnapshotMode() === 'record').each([
     expect((request.postDataBuffer()?.byteLength ?? 0) > 0).toBe(ambiguous)
   }
   if (voiceTiming !== undefined) expect((await voiceTiming).status()).toBe(204)
+  if (checkStatus) {
+    try {
+      await expect.poll(() => recognize.mock.calls.length).toBe(1)
+      const status = page.locator('[data-transcribing-voice]')
+      await status.getByRole('status').getByText('Transcribing voice').waitFor()
+      await status.getByRole('progressbar').waitFor()
+      await expect.poll(() => status.locator('[data-running-time]').innerText()).toMatch(/[1-9]/u)
+      if (process.env.AI_CONTROL_SCREENSHOTS) {
+        await page.screenshot({ path: join(process.env.AI_CONTROL_SCREENSHOTS, 'voice-transcribing-412-light.png') })
+      }
+    } finally {
+      recognition.resolve(undefined)
+    }
+  }
   if (ambiguous) {
     const question = page.locator('[data-question-key]')
     await question.getByText('Ты спрашиваешь, чем они отличаются, или как их отключить?', { exact: true }).waitFor()
@@ -190,5 +209,6 @@ it.skipIf(webSnapshotMode() === 'record').each([
     await page.locator('[data-message-attachments]').getByText('Voice message', { exact: true }).last().waitFor()
     expect(await page.getByText(/^ai-center-voice-/u).count()).toBe(0)
     expect(await page.locator('[data-voice-sending]').count()).toBe(0)
+    expect(await page.locator('[data-transcribing-voice]').count()).toBe(0)
   }
 })
