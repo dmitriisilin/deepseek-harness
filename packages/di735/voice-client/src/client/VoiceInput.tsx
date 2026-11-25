@@ -5,6 +5,7 @@ import type { ComposerSubmitGates, TokenSpan } from '@deepseek-ai/dsh-client-ui-
 import type { TranscriptionRequest } from '@deepseek-ai/dsh-experimental-api-speech-to-text/types'
 import type { SpeechPreparationOptions, SpeechProviderId, SpeechSelection, SpeechSelectionPatch, Transcript } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import { VoiceChunkUpload } from './chunk-upload.ts'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { VOICE_FILENAME_PREFIX } from '../voice-file.ts'
 import { audioBase64, type Recording } from './audio.ts'
@@ -55,6 +56,8 @@ interface ActiveRecording {
   readonly maxDurationSeconds: number
   readonly maxAudioBytes: number
   readonly compressedAudio: boolean
+  readonly recordingId: string
+  readonly chunkUpload?: VoiceChunkUpload
   phase: 'requesting' | 'recording' | 'transcribing'
   timer?: ReturnType<typeof setTimeout> | undefined
 }
@@ -158,10 +161,14 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
         feedback(t('tooLarge'))
         return
       }
+      const wavReadyAt = performance.now()
+      const chunkCount = mode !== 'dictate' && format !== undefined ? await active.chunkUpload?.finish() : undefined
+      if (mode === 'dictate') active.chunkUpload?.cancel()
+      if (run !== generation.current) throw new DOMException('Recording cancelled', 'AbortError')
       if (mode !== 'dictate' || (registerSubmitGate && addFiles)) {
-        pendingFile.current = new File([audio], `${VOICE_FILENAME_PREFIX}${randomUUID()}.${format ?? 'wav'}`, { type: audio instanceof Blob ? audio.type : 'audio/wav' })
+        pendingFile.current = new File([audio], `${VOICE_FILENAME_PREFIX}${active.recordingId}.${format ?? 'wav'}`, { type: audio instanceof Blob ? audio.type : 'audio/wav' })
         performance.mark(`ai-control:voice:${pendingFile.current.name}`, {
-          detail: { stoppedAt, wavReadyAt: performance.now() },
+          detail: { stoppedAt, wavReadyAt, chunkCount },
         })
       }
       if (mode === 'send') {
@@ -209,7 +216,12 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
     if (!catalog || !usable || locked || current.current) return
     pendingFile.current = undefined
     const run = ++generation.current
-    const active: ActiveRecording = { capture: createRecording(), abort: new AbortController(),
+    const recordingId = randomUUID()
+    const abort = new AbortController()
+    const chunkUpload = catalog.streamAudio && registerSubmitGate && addFiles
+      ? new VoiceChunkUpload(recordingId, abort.signal) : undefined
+    const active: ActiveRecording = { capture: createRecording(), abort, recordingId,
+      ...(chunkUpload === undefined ? {} : { chunkUpload }),
       span: inputActions.captureInsertion(), selection: catalog.selection,
       maxDurationSeconds: catalog.maxDurationSeconds, maxAudioBytes: catalog.maxAudioBytes, compressedAudio: catalog.compressedAudio === true, phase: 'requesting' }
     current.current = active
@@ -225,7 +237,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
         clearTimeout(active.timer); active.abort.abort()
         void disposeRecording(active.capture)
         feedback(failureText(failure, t))
-      }, active.compressedAudio)
+      }, active.compressedAudio, chunkUpload === undefined ? undefined : chunk => chunkUpload.append(chunk))
       if (run !== generation.current || current.current !== active) return
       active.phase = 'recording'
       setPhase('recording')

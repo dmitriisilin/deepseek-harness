@@ -98,10 +98,16 @@ it.skipIf(webSnapshotMode() === 'record').each([
     await record.waitFor()
     await page.screenshot({ path: join(process.env.AI_CONTROL_SCREENSHOTS, 'composer-controls-360-light.png'), animations: 'disabled' })
   }
+  const streaming = process.env.AI_CONTROL_STREAM_AUDIO === '1'
+    && process.env.AI_CONTROL_COMPRESSED_AUDIO === '1' && !dictate
+  if (streaming && ambiguous) await page.route('**/api/session/voiceChunk?*', route => route.fulfill({ status: 503 }))
+  const firstChunk = streaming ? page.waitForResponse(response =>
+    new URL(response.url()).pathname === '/api/session/voiceChunk') : undefined
   await record.click()
   await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).waitFor()
   // The fake microphone needs an interval of capture before it can emit samples.
-  await page.waitForTimeout(350)
+  if (firstChunk) expect((await firstChunk).status()).toBe(ambiguous ? 503 : 204)
+  else await page.waitForTimeout(350)
   if (!mixed && !ambiguous && !interrupted && process.env.AI_CONTROL_SCREENSHOTS) {
     await page.setViewportSize({ width: 412, height: 915 })
     await page.screenshot({ path: join(process.env.AI_CONTROL_SCREENSHOTS, 'recording-412-light.png'), animations: 'disabled' })
@@ -124,7 +130,17 @@ it.skipIf(webSnapshotMode() === 'record').each([
   const voiceTiming = process.env.AI_CONTROL_VOICE_TIMING === '1'
     ? page.waitForResponse(response => new URL(response.url()).pathname === '/api/session/voiceUploadTiming')
     : undefined
+  const upload = streaming ? page.waitForRequest((request) => {
+    const url = new URL(request.url())
+    return url.pathname === '/api/session/uploadFileBinary'
+      && url.searchParams.get('name')?.startsWith('ai-center-voice-')
+  }) : undefined
   await send.click()
+  if (upload) {
+    const request = await upload
+    expect(new URL(request.url()).searchParams.has('voiceChunks')).toBe(!ambiguous)
+    expect((request.postDataBuffer()?.byteLength ?? 0) > 0).toBe(ambiguous)
+  }
   if (voiceTiming !== undefined) expect((await voiceTiming).status()).toBe(204)
   if (ambiguous) {
     const question = page.locator('[data-question-key]')

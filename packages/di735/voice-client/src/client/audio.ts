@@ -89,7 +89,7 @@ export class Recording {
    * @param onError - receives failures during capture, before asynchronous resource release finishes.
    * @returns after capture starts; a cancelled permission grant immediately releases its tracks.
    */
-  async start(onError?: (error: RecordingError) => void, compressed = false): Promise<void> {
+  async start(onError?: (error: RecordingError) => void, compressed = false, onChunk?: (chunk: Blob) => void): Promise<void> {
     if (typeof MediaRecorder === 'undefined') throw new RecordingError('unavailable')
     await this.preview(onError)
     if (this.lifetime.signal.aborted) throw new RecordingError('cancelled')
@@ -106,7 +106,11 @@ export class Recording {
         }
       }
       this.recorder ??= new MediaRecorder(this.stream as MediaStream)
-      this.recorder.ondataavailable = (event) => { if (!this.lifetime.signal.aborted && event.data.size > 0) this.chunks.push(event.data) }
+      this.recorder.ondataavailable = ({ data }) => {
+        if (this.lifetime.signal.aborted || data.size === 0) return
+        this.chunks.push(data)
+        if (this.compressedType !== undefined) onChunk?.(data)
+      }
       const stopped = Promise.withResolvers<void>()
       this.stopped = stopped.promise
       this.recorder.onstop = () => {

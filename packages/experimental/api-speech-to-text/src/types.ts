@@ -22,6 +22,7 @@ export interface TranscriptionRequest {
 /** Current provider choices and audio intake limits. */
 export interface SpeechCatalog extends SpeechSnapshot {
   readonly compressedAudio?: boolean
+  readonly streamAudio?: boolean
   readonly maxAudioBytes: number
   readonly maxDurationSeconds: number
 }

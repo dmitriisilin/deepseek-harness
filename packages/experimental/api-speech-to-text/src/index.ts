@@ -44,7 +44,7 @@ export default class SpeechController extends TypertRemoteService {
    */
   @Remote
   catalog(): SpeechCatalog {
-    return { ...this.ctx.speechToText.snapshot(), ...this.config, compressedAudio: this.compressedAudio }
+    return { ...this.ctx.speechToText.snapshot(), ...this.config, compressedAudio: this.compressedAudio, streamAudio: process.env.AI_CONTROL_STREAM_AUDIO === '1' }
   }
 
   /**
@@ -55,7 +55,7 @@ export default class SpeechController extends TypertRemoteService {
   @Remote({ mode: 'stream' })
   async *follow(signal: AbortSignal): AsyncIterable<SpeechCatalog> {
     for await (const snapshot of this.ctx.speechToText.follow(signal)) {
-      yield { ...snapshot, ...this.config, compressedAudio: this.compressedAudio }
+      yield { ...snapshot, ...this.config, compressedAudio: this.compressedAudio, streamAudio: process.env.AI_CONTROL_STREAM_AUDIO === '1' }
     }
   }
 

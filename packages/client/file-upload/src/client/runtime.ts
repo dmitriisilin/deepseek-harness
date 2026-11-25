@@ -202,13 +202,27 @@ export class FileUploadRuntime extends Service implements FileUploadService {
       const markName = `ai-control:voice:${name ?? ''}`
       const mark = performance.getEntriesByName(markName, 'mark').at(-1) as PerformanceMark | undefined
       const uploadStartedAt = performance.now()
-      const body = await this.postRaw(query, data, signal, onProgress)
+      let body: string | undefined
+      let streamed = false
+      if (data instanceof Blob && Number.isInteger(mark?.detail?.chunkCount)) {
+        const finalize = new URLSearchParams(query)
+        finalize.set('voiceChunks', String(mark?.detail.chunkCount))
+        finalize.set('voiceBytes', String(data.size))
+        try {
+          body = await this.postRaw(finalize, new Blob(), signal, undefined)
+          streamed = true
+        } catch (error) {
+          if (signal?.aborted) throw error
+        }
+      }
+      body ??= await this.postRaw(query, data, signal, onProgress)
       const acknowledgedAt = performance.now()
       const result = parseUploadResult(body, fileUploadValue)
       if (mark && result.ok && JSON.parse(body).voiceTimingEnabled === true) {
         const { stoppedAt, wavReadyAt } = mark.detail
         const timings = {
           recordingId: name,
+          streamed,
           preparationMs: Math.round(wavReadyAt - stoppedAt),
           uploadWaitMs: Math.round(uploadStartedAt - wavReadyAt),
           uploadMs: Math.round(acknowledgedAt - uploadStartedAt),

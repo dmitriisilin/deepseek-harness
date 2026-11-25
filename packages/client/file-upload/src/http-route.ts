@@ -4,6 +4,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { VOICE_TIMING_FILE } from './protocol.ts'
+import type { VoiceChunks } from './voice-chunks.ts'
 import type { FileUploads } from './index.ts'
 import type { FileUploadValue, ImageUploadValue } from './types.ts'
 
@@ -21,7 +22,7 @@ type FileUploadHttpResult =
  * @param request - authenticated HTTP request from Connection.
  * @returns JSON result using HTTP status 200 after request validation.
  */
-export async function handleFileUploadHttp(service: FileUploads, request: Request): Promise<Response> {
+export async function handleFileUploadHttp(service: FileUploads, request: Request, voiceChunks?: VoiceChunks): Promise<Response> {
   if (request.method !== 'POST') {
     return new Response(null, { status: 405, headers: { allow: 'POST' } })
   }
@@ -36,9 +37,16 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
   }
   const name = url.searchParams.get('name') ?? undefined
   const imageMediaType = url.searchParams.get('mediaType') ?? undefined
+  const chunkCount = url.searchParams.get('voiceChunks')
+  const streamed = chunkCount === null ? undefined : voiceChunks?.complete(
+    name ?? '', Number(chunkCount), Number(url.searchParams.get('voiceBytes')),
+  )
+  if (chunkCount !== null && (streamed === undefined || imageMediaType !== undefined)) {
+    return new Response(null, { status: 409 })
+  }
   const upload = {
     sessionId: brandString<SessionId>(sessionId),
-    data: requestBodyChunks(request.body),
+    data: streamed?.data ?? requestBodyChunks(request.body),
     signal: request.signal,
     ...(name === undefined ? {} : { name }),
   }
@@ -63,6 +71,7 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
         },
     }
   }
+  if (result.ok && streamed !== undefined) voiceChunks?.remove(streamed.id)
   return new Response(JSON.stringify({ ...result, ...(result.ok && name && VOICE_TIMING_FILE.test(name)
     && process.env.AI_CONTROL_VOICE_TIMING === '1' ? { voiceTimingEnabled: true } : {}) }), {
     status: 200,
@@ -99,10 +108,11 @@ export async function handleVoiceTiming(request: Request): Promise<Response> {
   const preparationMs = Reflect.get(data, 'preparationMs')
   const uploadWaitMs = Reflect.get(data, 'uploadWaitMs')
   const uploadMs = Reflect.get(data, 'uploadMs')
+  const streamed = Reflect.get(data, 'streamed') === true
   if (typeof recordingId !== 'string' || !VOICE_TIMING_FILE.test(recordingId)
     || ![preparationMs, uploadWaitMs, uploadMs].every(value => Number.isInteger(value) && value >= 0 && value <= 3600000)) {
     return new Response(null, { status: 400 })
   }
-  console.info(JSON.stringify({ event: 'ai-control/voice-upload', recordingId, preparationMs, uploadWaitMs, uploadMs }))
+  console.info(JSON.stringify({ event: 'ai-control/voice-upload', recordingId, preparationMs, uploadWaitMs, uploadMs, streamed }))
   return new Response(null, { status: 204 })
 }

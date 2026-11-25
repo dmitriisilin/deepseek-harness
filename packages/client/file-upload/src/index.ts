@@ -9,6 +9,7 @@ import type { CommandFileReceiptResolver } from '@deepseek-ai/dsh-commands'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { Remote, RemoteError, remoteErrorOf, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { handleFileUploadHttp, handleVoiceTiming } from './http-route.ts'
+import { VoiceChunks } from './voice-chunks.ts'
 import { FILE_UPLOAD_PATH, VOICE_TIMING_PATH } from './protocol.ts'
 import type {
   EncodedFileUploadRequest, FileUploadReceiptId, FileUploadValue, ImageUploadValue, StagedAttachment,
@@ -76,12 +77,21 @@ export class FileUploads extends TypertRemoteService {
       () => ctx.commands.registerFileReceiptResolver(resolve),
       'file-upload: command file receipt resolver',
     )
+    const voiceChunks = process.env.AI_CONTROL_STREAM_AUDIO === '1' ? new VoiceChunks() : undefined
+    if (voiceChunks !== undefined) {
+      ctx.effect(() => ctx.connection.fetch.register({
+        path: '/api/session/voiceChunk',
+        methods: ['POST'],
+        requestBody: 'streaming',
+        fetch: request => voiceChunks.append(request),
+      }), 'file-upload: voice chunk route')
+    }
     ctx.effect(
       () => ctx.connection.fetch.register({
         path: FILE_UPLOAD_PATH,
         methods: ['POST'],
         requestBody: 'streaming',
-        fetch: request => handleFileUploadHttp(this, request),
+        fetch: request => handleFileUploadHttp(this, request, voiceChunks),
       }),
       'file-upload: streaming route',
     )
