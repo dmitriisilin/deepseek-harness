@@ -1976,3 +1976,33 @@ describe('agent loop', () => {
     expect(replayed.snapshotEvents().at(-1)?.type).toBe('session/end-seed')
   })
 })
+
+describe('parallel Supervisor integration', () => {
+  it.each(['claude-opus-5-5', 'deepseek-flash'])('lets %s finish before the classifier', async (model) => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    let classifierCancelled = false
+    const classifierStarted = Promise.withResolvers<undefined>()
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => {
+      classifierStarted.resolve(undefined)
+      return new Promise<Response>((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => {
+          classifierCancelled = true
+          reject(options.signal?.reason)
+        }, { once: true })
+      })
+    }))
+    const adapter = new MockAdapter([textResponse('105')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('parallel-supervisor'), { provider: 'mock', model })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'What is 15 times 7?')
+    await classifierStarted.promise
+    await idle
+    expect(classifierCancelled).toBe(true)
+    expect(adapter.requests).toHaveLength(1)
+    expect(adapter.requests[0]?.model).toBe(model)
+    expect(adapter.requests[0]?.maxTokens).toBeLessThanOrEqual(8192)
+  })
+})

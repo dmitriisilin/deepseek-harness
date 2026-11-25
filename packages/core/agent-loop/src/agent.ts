@@ -22,9 +22,10 @@ import { AgentModel, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-ag
 import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   LlmError,
-  ReasoningEffortId,
   createAssistantMessage,
   createDeveloperMessage,
+  createToolResultMessage,
+  createUserMessage,
   errorChain,
   markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
@@ -42,7 +43,7 @@ import { ReactLoopInbox } from './inbox.ts'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { AssistantStreamAttempt } from './assistant-stream.ts'
 import { SystemPromptProjection } from './runtime-context.ts'
-import { superviseTurn } from './supervisor.ts'
+import { SupervisorBudget, WORKER_OUTPUT_LIMIT } from './supervisor.ts'
 
 /** Projected facts consumed by this driver; registration stays with the factory. */
 interface LoopProjections {
@@ -66,7 +67,8 @@ type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }
 
 interface TurnDiagnostics {
   started: number
-  supervisor?: Awaited<ReturnType<typeof superviseTurn>> & { durationMs: number }
+  workerMs?: number
+  supervisor?: { calls: Omit<SupervisorBudget['calls'][number], 'started'>[]; extensions: number; reason?: string | undefined }
   firstTextMs?: number
   effort?: string
   preparationMs?: number
@@ -85,7 +87,6 @@ type PreparedStep =
     selection: Readonly<ModelSelection>
     /** Admission shared by the step's declarations and dispatch; the turn disposes it after the step. */
     toolSet: ResolvedToolSet
-    toolsSuppressed?: true
   }
 
 /** Remove adapter-derived values before plugins propose the next request config. */
@@ -303,7 +304,7 @@ export class ReactLoopAgent implements Agent {
   private async preStep(
     target: InboxTarget,
     position: { turn: number; step: number },
-    diagnostics?: TurnDiagnostics,
+    final = false,
   ): Promise<PreparedStep> {
     /* v8 ignore next -- private callers establish the running phase before proposing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
@@ -333,33 +334,9 @@ export class ReactLoopAgent implements Agent {
         toolSet.dispose()
         return decision
       }
-      if (diagnostics && process.env.AI_CONTROL_SUPERVISOR === '1' && target === 'next-turn'
-        && selection.provider === 'deepseek-official' && selection.model === 'deepseek-flash') {
-        const previous = this.session.deriveMessages().findLast(
-          (message): message is UserMessage => message.role === 'user' && 'source' in message && message.source.kind === 'user',
-        )
-        const started = performance.now()
-        const policy = await superviseTurn(options => this.loopCtx.llm.stream(options), decision.messages, previous, signal)
-        diagnostics.supervisor = { ...policy, durationMs: Math.round(performance.now() - started) }
-        const { route } = policy
-        signal.throwIfAborted()
-        if (route !== 'standard') {
-          const controlledSelection = route === 'direct'
-            ? { ...selection, reasoningEffort: ReasoningEffortId('off') }
-            : selection
-          const restricted: ResolvedToolSet = { dispose: () => toolSet.dispose(), view: () => new Map() }
-          const controlledAssembly = await this.loopCtx.systemPrompt.assemble({
-            ...assembleContextFor(this, signal), modelSelection: controlledSelection, toolSet: restricted,
-          })
-          return {
-            ...decision,
-            assembly: { ...controlledAssembly, tools: [] },
-            selection: controlledSelection,
-            toolSet: restricted,
-            toolsSuppressed: true,
-            startsRequestSeries: true,
-          }
-        }
+      if (final) {
+        const restricted: ResolvedToolSet = { dispose: () => toolSet.dispose(), view: () => new Map() }
+        return { ...decision, assembly: { ...assembly, tools: [] }, selection, toolSet: restricted, startsRequestSeries: true }
       }
       return { ...decision, assembly, selection, toolSet }
     } catch (error: unknown) {
@@ -395,12 +372,20 @@ export class ReactLoopAgent implements Agent {
       && (process.env.AI_CONTROL_SUPERVISOR === '1' || process.env.AI_CONTROL_TURN_LOG === '1')
       ? { started: performance.now(), requests: 0, tools: 0, toolBatchMs: 0 }
       : undefined
+    const supervisor = diagnostics && process.env.AI_CONTROL_SUPERVISOR === '1' ? new SupervisorBudget(signal) : undefined
     let target: InboxTarget = 'next-turn'
+    let progress = ''
     try {
       while (true) {
         signal.throwIfAborted()
         const step = phase.step + 1
-        const decision = await this.preStep(target, { turn, step }, diagnostics)
+        if (step > 1 && !turnEnds && supervisor && diagnostics && !supervisor.final) {
+          await supervisor.allow({
+            requests: diagnostics.requests + 1, steps: step, tools: diagnostics.tools,
+            durationMs: supervisor.elapsed(),
+          }, progress)
+        }
+        const decision = await this.preStep(target, { turn, step }, supervisor?.final)
         if (decision.kind === 'reject') {
           turnEnds = { kind: 'blocked' }
           return false
@@ -426,7 +411,13 @@ export class ReactLoopAgent implements Agent {
           try {
             // max-tokens is sticky: once any step hits the ceiling, later steps
             // that complete normally must not downgrade the turn outcome.
-            const stepEnd = await this.step(decision, diagnostics)
+            if (step === 1 && supervisor) {
+              const previous = this.session.deriveMessages().findLast(
+                (message): message is UserMessage => message.role === 'user' && 'source' in message && message.source.kind === 'user',
+              )
+              supervisor.start(decision.messages, previous)
+            }
+            const stepEnd = await this.step(decision, diagnostics, supervisor, (text) => { progress = text })
             // max-tokens stays sticky: a later completed step must not
             // downgrade the turn outcome.
             if (turnEnds === null || turnEnds.kind !== 'max-tokens') turnEnds = stepEnd
@@ -441,7 +432,7 @@ export class ReactLoopAgent implements Agent {
             } catch (recoveryError: unknown) {
               throw new AggregateError([error, recoveryError], 'Step failed and its pending tool results could not be recorded', { cause: error })
             }
-            throw error
+            if (supervisor?.reason !== 'tool_deadline' || signal.aborted) throw error
           } finally {
             stopRecovery()
             this.session.append('step/end', { turn, step })
@@ -476,11 +467,17 @@ export class ReactLoopAgent implements Agent {
       }
       this.throwError(error)
     } finally {
+      supervisor?.close()
       if (diagnostics) {
+        if (supervisor) diagnostics.supervisor = {
+          calls: supervisor.calls.map(({ started: _started, ...call }) => call),
+          extensions: supervisor.extensions,
+          reason: supervisor.reason ?? turnEnds?.kind,
+        }
         const { started, ...metrics } = diagnostics
         console.info(JSON.stringify({
           event: 'ai-control/turn', sessionId: this.session.id, turn, status: turnEnds?.kind,
-          policyVersion: 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
+          policyVersion: supervisor ? 3 : 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
         }))
       }
       try {
@@ -498,7 +495,12 @@ export class ReactLoopAgent implements Agent {
     return true
   }
 
-  private async step(decision: Extract<PreparedStep, { kind: 'enter' }>, diagnostics?: TurnDiagnostics): Promise<StepEndReason | null> {
+  private async step(
+    decision: Extract<PreparedStep, { kind: 'enter' }>,
+    diagnostics: TurnDiagnostics | undefined,
+    supervisor: SupervisorBudget | undefined,
+    setProgress: (text: string) => void,
+  ): Promise<StepEndReason | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
     const { turn, step, abort: { signal } } = this.phase
@@ -506,9 +508,13 @@ export class ReactLoopAgent implements Agent {
 
     const { assembly } = decision
     const renderedPrompt = renderPrompt(assembly)
+    const final = supervisor?.final === true
     let firstAttempt = true
     while (true) {
-      const { config, preparedCall } = await this.prepareRequest(turn, step, decision.selection, signal)
+      const requestSignal = supervisor?.workSignal(signal) ?? signal
+      const { config, preparedCall } = await this.prepareRequest(
+        turn, step, decision.selection, requestSignal, supervisor ? WORKER_OUTPUT_LIMIT : undefined,
+      )
       const currentContext = this.loopCtx.systemPrompt.refreshContext(assembly, {
         ...assembleContextFor(this, signal), modelSelection: decision.selection,
       })
@@ -538,11 +544,19 @@ export class ReactLoopAgent implements Agent {
           }
         }
       }
+      if (firstAttempt && final) {
+        const instruction = supervisor?.reason === 'clarify' || supervisor?.reason === 'ambiguous_input'
+          ? 'Ask the user a concise clarifying question if the available information is insufficient.'
+          : 'Finish the answer using available information. State any important limits or unverified points.'
+        this.session.append('user/message', createUserMessage({
+          source: { kind: 'runtime-context', form: 'instructions' }, content: [{ type: 'text', text: instruction }],
+        }), { surfaceOp: 'append' })
+      }
       if (context !== undefined && !contextAdmitted) {
         this.session.append('user/message', context, { surfaceOp: 'append' })
       }
       firstAttempt = false
-      const request = this.buildRequest(config, preparedCall, assembly.tools, { turn, step }, startsRequestSeries, signal)
+      const request = this.buildRequest(config, preparedCall, assembly.tools, { turn, step }, startsRequestSeries, requestSignal)
       const live = new AssistantStreamAttempt(
         this.session.id,
         ++this.assistantAttemptCounter,
@@ -552,6 +566,7 @@ export class ReactLoopAgent implements Agent {
         (frame) => { this.dispatch.emit('agent/assistant-stream', { frame }) },
       )
       let started = false
+      const workerStarted = performance.now()
       try {
         if (diagnostics) {
           diagnostics.requests += 1
@@ -562,13 +577,13 @@ export class ReactLoopAgent implements Agent {
         live.start()
         started = true
         for await (const chunk of stream) {
-          signal.throwIfAborted()
+          requestSignal.throwIfAborted()
           live.push(chunk)
           if (diagnostics && diagnostics.firstTextMs === undefined && chunk.type === 'text-delta' && chunk.text.trim()) {
             diagnostics.firstTextMs = Math.round(performance.now() - diagnostics.started)
           }
         }
-        signal.throwIfAborted()
+        requestSignal.throwIfAborted()
       } catch (error: unknown) {
         if (!started) throw error
         try {
@@ -609,7 +624,13 @@ export class ReactLoopAgent implements Agent {
             { cause: error },
           )
         }
+        if (supervisor && !final && requestSignal.aborted && !signal.aborted) {
+          supervisor.finish('worker_deadline')
+          return null
+        }
         throw error
+      } finally {
+        if (diagnostics) diagnostics.workerMs = (diagnostics.workerMs ?? 0) + Math.round(performance.now() - workerStarted)
       }
       try {
         const finish = live.finish
@@ -633,6 +654,11 @@ export class ReactLoopAgent implements Agent {
           if (action?.kind !== 'retry') {
             throw LlmError.fromFailure(finish.failure)
           }
+          if (final) throw LlmError.fromFailure(finish.failure)
+          if (supervisor && diagnostics && !await supervisor.allow({
+            requests: diagnostics.requests + 1, steps: step, tools: diagnostics.tools,
+            durationMs: supervisor.elapsed(),
+          }, 'The last model request failed before producing a usable response.')) return null
           continue
         }
 
@@ -658,19 +684,39 @@ export class ReactLoopAgent implements Agent {
 
         const toolCalls = message.content.filter(block => block.type === 'tool-call')
         if (toolCalls.length === 0) return { kind: 'completed' }
+        const progress = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ').slice(-1200)
+        setProgress(`${progress} Tools requested: ${toolCalls.map(block => block.name).join(', ')}`)
+        if (supervisor && diagnostics && (final || !await supervisor.allow({
+          requests: diagnostics.requests + 1, steps: step + 1, tools: diagnostics.tools + toolCalls.length,
+          durationMs: supervisor.elapsed(),
+        }, progress))) {
+          for (const block of toolCalls) {
+            const seq = this.session.append('tool/call', { turn, step, callId: block.id, name: block.name, arguments: block.arguments }).seq
+            this.session.append('tool/result', {
+              turn, step,
+              message: createToolResultMessage({
+                callId: block.id, isError: true, content: [{ type: 'text', text: 'Turn budget does not permit this tool call.' }],
+              }),
+            }, { surfaceOp: 'append', sourceEventSeqs: [seq] })
+          }
+          return final ? { kind: 'completed' } : null
+        }
         const toolsStarted = performance.now()
+        const toolSignal = supervisor?.workSignal(signal) ?? signal
         if (diagnostics) diagnostics.tools += toolCalls.length
         const maxParallelToolCalls = this.loopCtx.agentLoop.config.maxParallelToolCalls.get()
         try {
           const result = await this.loopCtx.tools.execute({
-            calls: toolCalls, signal, agent: this, log: { turn, step },
+            calls: toolCalls, signal: toolSignal, agent: this, log: { turn, step },
             maxParallelToolCalls, toolSet: decision.toolSet,
           })
           for (const context of result.additionalContexts) {
             this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context])
           }
-          return result.concluded || decision.toolsSuppressed ? { kind: 'completed' } : null
+          if (supervisor && toolSignal.aborted && !signal.aborted) supervisor.finish('tool_deadline')
+          return result.concluded ? { kind: 'completed' } : null
         } catch (error: unknown) {
+          if (supervisor && toolSignal.aborted && !signal.aborted) supervisor.finish('tool_deadline')
           if (!(error instanceof ToolBatchExecutionError)) throw error
           for (const context of error.partial.additionalContexts) {
             this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context])
@@ -692,6 +738,7 @@ export class ReactLoopAgent implements Agent {
     step: number,
     selection: Readonly<ModelSelection>,
     signal: AbortSignal,
+    outputLimit?: number,
   ): Promise<{ config: LlmCallConfig; preparedCall?: PreparedLlmCall }> {
     const { session } = this
 
@@ -704,11 +751,13 @@ export class ReactLoopAgent implements Agent {
       : maxTokens === undefined ? {} : { maxTokens }
     const { provider: _provider, model: _model, reasoningEffort: _effort, ...controls } = persisted
     const seedConfig = deepFreeze(structuredClone({ ...controls, ...selection }))
-    const proposedConfig = await this.dispatch.waterfall(
+    const proposal = await this.dispatch.waterfall(
       'agent/request', { turn, step, signal },
       () => Promise.resolve(seedConfig),
     )
     signal.throwIfAborted()
+    const proposedConfig = outputLimit === undefined ? proposal
+      : { ...proposal, maxTokens: Math.min(this.options.maxTokens ?? outputLimit, proposal.maxTokens ?? outputLimit, outputLimit) }
     if (proposedConfig.provider !== selection.provider || proposedConfig.model !== selection.model) {
       throw new Error(`agent "${this.id}": agent/request proposed "${proposedConfig.provider}/${proposedConfig.model}" after step preparation fixed "${selection.provider}/${selection.model}"; use agent.model.select() before step preparation`)
     }

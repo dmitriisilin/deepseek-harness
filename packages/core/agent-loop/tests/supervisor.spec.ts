@@ -1,7 +1,7 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it, vi } from 'vitest'
-import { superviseTurn } from '../src/supervisor.ts'
+import { SupervisorBudget, superviseTurn } from '../src/supervisor.ts'
 import { textResponse } from './mock-adapter.ts'
 
 const user = createUserMessage({
@@ -36,5 +36,42 @@ describe('AI Control Supervisor', () => {
     await expect(superviseTurn(stream, [user], undefined, controller.signal)).resolves.toEqual({ route: 'standard', reason: 'provider_error' })
     controller.abort()
     await expect(superviseTurn(stream, [user], undefined, controller.signal)).rejects.toThrow()
+  })
+})
+
+describe('per-turn Supervisor budget', () => {
+  const spend = { requests: 2, steps: 2, tools: 1, durationMs: 1000 }
+
+  it('waits for the initial decision only at a work boundary', async () => {
+    const response = Promise.withResolvers<string>()
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(await response.promise)
+    })
+    budget.start([user], undefined)
+    let admitted = false
+    const admission = budget.allow(spend, '').then((value) => { admitted = value; return value })
+    await Promise.resolve()
+    expect(admitted).toBe(false)
+    response.resolve('ACTION')
+    await expect(admission).resolves.toBe(true)
+    expect(budget.calls).toHaveLength(1)
+    budget.close()
+  })
+
+  it('reviews spent grants and reserves a tool-free answer at the hard limit', async () => {
+    const replies = ['ACTION', 'EXTEND']
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      const reply = replies.shift()
+      if (reply === undefined) throw new Error('Unexpected review')
+      yield* textResponse(reply)
+    })
+    budget.start([user], undefined)
+    await expect(budget.allow({ ...spend, tools: 2 }, '')).resolves.toBe(true)
+    await expect(budget.allow({ ...spend, requests: 4, steps: 4, tools: 5 }, 'Found one source')).resolves.toBe(true)
+    expect(budget.extensions).toBe(1)
+    await expect(budget.allow({ ...spend, requests: 9 }, '')).resolves.toBe(false)
+    expect(budget.final).toBe(true)
+    expect(budget.reason).toBe('hard_limit')
+    budget.close()
   })
 })

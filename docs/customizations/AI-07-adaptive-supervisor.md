@@ -1,10 +1,6 @@
 # AI-07. Adaptive Supervisor
 
-The staging experiment is enabled by setting `AI_CONTROL_SUPERVISOR=1` in the service environment. Remove the variable and restart the service to restore the original routing. The experiment runs only on the official DeepSeek Flash route.
-
-After the pre-step hooks admit the input (including speech recognition and clarification), a separate Flash request classifies the turn. It receives up to 3,000 characters of current text and 900 characters of the previous user turn. Attachment bytes, tool schemas and tool output are excluded. The request has a 2.5 second deadline and no tools. Invalid or unavailable classification falls back to the existing loop. Logs record the route, reason code and duration without conversation text.
-
-Direct and deep routes suppress tool exposure and execution admission for the Worker step. Direct uses Flash with thinking disabled for that step. Deep preserves the selected effort. Standard runs the existing loop and its permissions. The same Session and streaming path handle all routes.
+Set `AI_CONTROL_SUPERVISOR=1` on the AI Control service and supply `DEEP_SEEK_Supervisor` through its environment. The controller uses official DeepSeek Flash with reasoning disabled. It applies to both Flash and Opus Worker turns. Set `AI_CONTROL_TURN_LOG=1` independently to measure the original loop.
 
 ## Baselines
 
@@ -18,7 +14,7 @@ Direct and deep routes suppress tool exposure and execution admission for the Wo
 
 Both tool calls were `web_search` (one call per turn). Total for the two turns is 78.9 s, excluding the interval between them. The first visible text timestamps are unavailable. Compare identical WAVs in order for a voice replay. The isolated text replay below covers only the first question.
 
-The experiment covers initial routing. Automatic capability promotion, catalog lookup, renewable budgets and asynchronous review remain separate implementation stages.
+The original voice baselines predate adaptive budgets.
 
 ## Flash staging replay
 
@@ -36,7 +32,7 @@ The Supervisor call took 1.1 s. The first visible text mentioning ОСАГО app
 
 The supervisor flag enables the journal. Use `AI_CONTROL_TURN_LOG=1` on an experiment profile to collect the same turn timings with the supervisor disabled.
 
-- `ai-control/turn` is emitted at the end of a turn. It carries the session ID and turn number, policy version, status, route and reason when classified, supervisor duration, preparation time, effective request effort, step count, model request attempts, requested tool count and elapsed tool batch time. Preparation includes recognition and classification where applicable. Tool batch time is elapsed wall time, including waiting within the batch.
+- `ai-control/turn` is emitted at the end of a turn. It carries the session ID and turn number, policy version, status, individual Supervisor call timings, decisions and token usage, preparation time, effective request effort, step count, model request attempts, requested tool count and elapsed tool batch time. Preparation includes recognition. Classification starts after preparation. Tool batch time is elapsed wall time, including waiting within the batch.
 - `firstTextMs` measures from server turn start to the first nonempty streamed text delta. It does not measure rendering in Chrome. An interrupted turn or a turn with no text may omit it.
 - `ai-control/stt` is emitted once per completed voice processing attempt and can be joined by session ID and turn number. It shows recognition wall time, reported inference time when available, time spent in postprocessing including any clarification, and the outcome.
 - The classifier chooses a fixed reason code. Its reason is a model prediction. Provider errors, deadlines and invalid output have separate deterministic codes and use the standard route.
@@ -48,4 +44,14 @@ These records omit transcript text, file names, prompts, tool arguments and prov
 
 The loop integration lives in `packages/core/agent-loop`. Compare upstream support for per-turn tool admission, temporary effort and correlated diagnostics. Replace the fork code when upstream can classify admitted text after voice clarification, retain the selected provider, suppress tool admission on direct turns and preserve the normal loop on fallback. Check both voice baselines and the text replay with the new implementation.
 
-The follow-on design adds explicit capability requests, renewable per-turn budgets, evidence checks and checkpoint reviews. A budget limits work until the next review. It does not grant permissions. The current release classifies the initial turn and records measurements.
+Recheck the admission points for retries, tool batches and subsequent requests when rebasing. Keep the service credential and the selected Worker model independent.
+
+## Контракт параллельного цикла
+
+После принятия пользовательского ввода, включая расшифровку, первый запрос выбранной модели и классификация Supervisor запускаются независимо. Первый запрос получает ограничение выходных токенов до классификации. Декларации инструментов можно передать модели сразу. Фактические вызовы инструментов ждут допуска по бюджету и проходят штатные разрешения. Готовый ответ без инструментов завершает ход сразу, отменяя незавершённую классификацию.
+
+Supervisor использует отдельный ключ `DEEP_SEEK_Supervisor`. Выбранная модель Worker сохраняется. Решение Supervisor действует на следующие действия цикла, поскольку уже отправленный запрос изменить нельзя.
+
+Бюджет учитывает фактические попытки Worker, открытые шаги, число запрошенных инструментов в партии и время. При достижении мягкой границы выполняется ограниченная переоценка. Supervisor получает исходную задачу, краткий видимый прогресс и счётчики. Продление даёт ограниченную порцию работы в пределах жёсткого лимита. При отказе Supervisor, недостатке данных или исчерпании лимита цикл резервирует один запрос без инструментов для ответа по имеющимся данным или уточнения. Отмена хода прерывает Worker и Supervisor.
+
+Обычный бюджет допускает до 3 запросов, 3 шагов, 4 инструментов и 25 секунд. Запасной бюджет допускает до 2 запросов, 2 шагов, 2 инструментов и 15 секунд. Жёсткий предел исследовательской части — 8 запросов, 7 шагов, 12 инструментов и 90 секунд. Возможны два ограниченных продления. Для финального запроса отдельно отведено до 20 секунд. Таймаут каждого обращения к Supervisor — 2,5 секунды.
