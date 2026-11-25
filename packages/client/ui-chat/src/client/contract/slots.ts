@@ -259,6 +259,8 @@ export interface UserContentData {
   readonly attachments: readonly UserContentAttachment[]
   /** Blocks not represented by text or attachment presentation. */
   readonly extraBlocks: readonly unknown[]
+  /** Time of the locally admitted voice submission while the transcript is pending. */
+  readonly voiceSubmittedAt?: number
   /** Labels displayed in the caller-provided reference summary. */
   readonly referenceLabels?: readonly string[]
 }

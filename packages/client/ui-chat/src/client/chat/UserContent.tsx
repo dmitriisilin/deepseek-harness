@@ -2,6 +2,7 @@
 import { Fragment } from 'react'
 import type { FactoryComponentPropsOf } from '@deepseek-ai/dsh-client-ui-slots'
 import { fileExtension, FileTypeIcon, fileSizeText, IconMicrophoneOutlineRegular, isVoiceRecordingName, JsonBlock, UserMessageBubble } from '@deepseek-ai/dsh-client-ui-primitives'
+import { VoiceTranscriptionClock } from './RunningStatus.tsx'
 import css from './MessageItem.module.css'
 
 const EMPTY_LABELS: readonly string[] = []
@@ -14,16 +15,28 @@ const EMPTY_LABELS: readonly string[] = []
  */
 export function UserContent({ content, loadImage, facts, interactive = false, ellipsis = false, renderSlot, renderFactorySlot, t }:
 FactoryComponentPropsOf<'conversation.chat.user.content'>) {
-  const { text, attachments, extraBlocks, referenceLabels = EMPTY_LABELS } = content
+  const { text, attachments, extraBlocks, voiceSubmittedAt, referenceLabels = EMPTY_LABELS } = content
   const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
-  const compactImages = attachments.length > 1
+  const regularAttachments = aiControl ? attachments.filter(attachment =>
+    attachment.type !== 'file' || !isVoiceRecordingName(attachment.file.name)) : attachments
+  const voice = regularAttachments.length < attachments.length
+  const transcribing = voice && voiceSubmittedAt !== undefined
+  const compactImages = regularAttachments.length > 1
   const truncated = (total: number): string => t('json.truncated', { total })
-  const showBubble = text !== '' || extraBlocks.length > 0
+  const body = <>
+    {text === '' ? voice && !transcribing ? t('file.voiceMessage') : null
+      : renderFactorySlot('conversation.user.text', { text, facts, interactive, ellipsis })}
+    {transcribing && <VoiceTranscriptionClock startTime={voiceSubmittedAt} t={t} />}
+    {extraBlocks.map((block, index) => (
+      <JsonBlock key={index} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />
+    ))}
+  </>
+  const showBubble = voice || text !== '' || extraBlocks.length > 0
   return (
     <div className={css.userStack}>
-      {attachments.length > 0 && (
+      {regularAttachments.length > 0 && (
         <div className={css.attachmentRow} data-message-attachments>
-          {attachments.map((attachment, index) => attachment.type === 'image'
+          {regularAttachments.map((attachment, index) => attachment.type === 'image'
             ? (
               <Fragment key={`image:${index}`}>
                 {renderSlot('conversation.chat.user.images', {
@@ -31,12 +44,7 @@ FactoryComponentPropsOf<'conversation.chat.user.content'>) {
                 })}
               </Fragment>
             )
-            : aiControl && isVoiceRecordingName(attachment.file.name) ? (
-              <span key={`file:${index}`} className={css.voiceMessage}>
-                <IconMicrophoneOutlineRegular size={18} aria-hidden />
-                {t('file.voiceMessage')}
-              </span>
-            ) : (
+            : (
               <span key={`file:${index}`} className={css.fileCard} title={attachment.file.name}>
                 <FileTypeIcon path={attachment.file.name} className={css.fileIcon} />
                 <span className={css.fileContent}>
@@ -50,11 +58,14 @@ FactoryComponentPropsOf<'conversation.chat.user.content'>) {
             ))}
         </div>
       )}
-      {showBubble && <UserMessageBubble data-message-bubble="" data-text-interaction-source="">
-        {renderFactorySlot('conversation.user.text', { text, facts, interactive, ellipsis })}
-        {extraBlocks.map((block, index) => (
-          <JsonBlock key={index} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />
-        ))}
+      {showBubble && <UserMessageBubble className={voice ? css.voiceMessage : undefined}
+        data-voice-message={voice || undefined} data-transcribing-voice={transcribing || undefined}
+        data-message-bubble="" data-text-interaction-source="">
+        {voice && <span className={css.voiceIcon} role={text ? 'img' : undefined}
+          aria-label={text ? t('file.voiceMessage') : undefined} aria-hidden={!text || undefined}>
+          <IconMicrophoneOutlineRegular size={18} aria-hidden />
+        </span>}
+        {voice ? <div className={css.voiceText}>{body}</div> : body}
       </UserMessageBubble>}
       {referenceLabels.length > 0 && (
         <div className={css.referenceSummary}>

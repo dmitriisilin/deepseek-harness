@@ -360,14 +360,19 @@
 }
 
 .voiceMessage {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  align-items: baseline;
   gap: 8px;
-  padding: 6px 12px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 14px;
 }
 
-.voiceMessage svg { flex: none; }
+.voiceIcon {
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: calc(22px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-secondary);
+}
+
+.voiceText { min-width: 0; }

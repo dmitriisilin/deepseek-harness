@@ -178,7 +178,7 @@ it.skipIf(webSnapshotMode() === 'record').each([
   if (checkStatus) {
     try {
       await expect.poll(() => recognize.mock.calls.length).toBe(1)
-      const status = page.locator('[data-transcribing-voice]')
+      const status = page.locator('[data-voice-message][data-transcribing-voice]')
       await status.getByRole('status').getByText('Transcribing voice').waitFor()
       expect(await status.getByRole('progressbar').count()).toBe(0)
       await expect.poll(() => status.locator('[data-running-time]').innerText()).toMatch(/[1-9]/u)
@@ -216,7 +216,14 @@ it.skipIf(webSnapshotMode() === 'record').each([
     const bubble = page.locator('[data-chat-flow-kind="user"] [class*="userRow"]').last()
     await bubble.getByText(transcript, { exact: !mixed }).first().waitFor()
     expect(await bubble.innerText()).not.toContain('[Voice message transcript]')
-    await page.locator('[data-message-attachments]').getByText('Voice message', { exact: true }).last().waitFor()
+    const voiceBubble = bubble.locator('[data-voice-message]')
+    await voiceBubble.getByRole('img', { name: 'Voice message' }).waitFor()
+    expect(await voiceBubble.innerText()).toContain(transcript)
+    expect(await bubble.getByText('Voice message', { exact: true }).count()).toBe(0)
+    if (mixed) await bubble.getByTitle('ordinary.wav').waitFor()
+    if (checkStatus && process.env.AI_CONTROL_SCREENSHOTS) {
+      await page.screenshot({ path: join(process.env.AI_CONTROL_SCREENSHOTS, 'voice-message-412-light.png') })
+    }
     expect(await page.getByText(/^ai-center-voice-/u).count()).toBe(0)
     expect(await page.locator('[data-voice-sending]').count()).toBe(0)
     expect(await page.locator('[data-transcribing-voice]').count()).toBe(0)

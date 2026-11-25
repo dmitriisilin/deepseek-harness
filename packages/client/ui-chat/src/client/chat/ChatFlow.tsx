@@ -39,10 +39,10 @@ export const ChatFlow = memo(function ChatFlow({
   const latestStep = latestTurnOpen ? latestTurn.steps.at(-1) : undefined
   const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   // The local echo is retired when its admitted user message with the transcript appears.
-  const voice = aiControl ? pendingInputs.find((item): item is PendingSubmission => isLocalSubmission(item)
+  const transcribing = aiControl && pendingInputs.some(item => isLocalSubmission(item)
     && item.placement === 'transcript' && item.attachments.some(attachment =>
-    attachment.type === 'file' && isVoiceRecordingName(attachment.value.name))) : undefined
-  const holding = !running && latestTurnOpen && voice === undefined
+    attachment.type === 'file' && isVoiceRecordingName(attachment.value.name)))
+  const holding = !running && latestTurnOpen && !transcribing
   const seatProps = {
     nodeStore, useChatNode, useChatNodeBottom, useChatNodeProcess, usePresentation,
     useStore, actions, renderSlot, t, useGroupAction, deferCollapse,
@@ -92,8 +92,8 @@ export const ChatFlow = memo(function ChatFlow({
   // the status slot (hidden) until its actions row takes the slot in the same commit.
   return [
     ...rows, ...leadingRows, ...openingRows,
-    ...running || holding || voice !== undefined ? [<RunningStatus key="running" startTime={voice?.time ?? runningStartTime}
-      paused={disconnected} holding={holding} compact={aiControl} transcribing={voice !== undefined}
+    ...!transcribing && (running || holding) ? [<RunningStatus key="running" startTime={runningStartTime}
+      paused={disconnected} holding={holding} compact={aiControl}
       step={latestStep?.step} stepStartedAt={latestStep?.start?.time} stepEndedAt={latestStep?.end?.time} t={t} />] : [],
     ...pendingRows,
   ]

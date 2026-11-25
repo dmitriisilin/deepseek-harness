@@ -40,9 +40,15 @@ function contentParts(content: readonly unknown[]): {
     && document.documentElement.dataset.aiControl === 'red'
     && attachments.some(attachment => attachment.type === 'file'
       && isVoiceRecordingName(attachment.file.name))
-  const text = voiceTranscript
-    ? texts.map(part => part.replace(/^\[Voice message transcript\]\r?\n/u, '')).join('')
-    : texts.join('')
+  const transcriptMarker = /^\[Voice message transcript\]\r?\n/u
+  let text = ''
+  let previousWasVoice = false
+  for (const part of texts) {
+    const voice = voiceTranscript && transcriptMarker.test(part)
+    if (text !== '' && (voice || previousWasVoice)) text += '\n\n'
+    text += voice ? part.replace(transcriptMarker, '') : part
+    previousWasVoice = voice
+  }
   return { text, attachments, rest }
 }
 
@@ -186,7 +192,7 @@ const NO_MESSAGE_SOURCE: PropsRenderSlots<'conversation.chat.user.before'>['rend
 function UserStyleBubble({
   node, renderSlotChain, content, loadImage, renderFactorySlot, actions,
   pending = false, echo = false, batchStart = false,
-  referenceLabels, skillNames, previewAttachments, facts: inputFacts = EMPTY_TEXT_FACTS, interactive = false,
+  referenceLabels, skillNames, previewAttachments, voiceSubmittedAt, facts: inputFacts = EMPTY_TEXT_FACTS, interactive = false,
 }: {
   content: readonly unknown[]
   renderFactorySlot: PropsRenderFactories['renderFactorySlot']
@@ -208,6 +214,7 @@ function UserStyleBubble({
   skillNames?: readonly string[]
   /** Local submission-echo attachments replacing the content-derived attachment sequence. */
   previewAttachments?: readonly UserContentAttachment[]
+  voiceSubmittedAt?: number
   /** Inputs used by text transforms, separate from row and rendering props. */
   facts?: Readonly<Partial<UserTextFacts>>
 } & Pick<ChatNodeOwnerProps, 'loadImage'> & Pick<UserContentInput, 'interactive'>): ReactNode {
@@ -216,8 +223,9 @@ function UserStyleBubble({
     text: parts.text,
     attachments: previewAttachments ?? parts.attachments,
     extraBlocks: parts.rest,
+    ...(voiceSubmittedAt === undefined ? {} : { voiceSubmittedAt }),
     ...(referenceLabels === undefined ? {} : { referenceLabels }),
-  }), [parts, previewAttachments, referenceLabels])
+  }), [parts, previewAttachments, referenceLabels, voiceSubmittedAt])
   const facts = useMemo<Readonly<Partial<UserTextFacts>>>(() => ({
     ...inputFacts,
     ...(referenceLabels === undefined ? {} : { sessionLabels: referenceLabels }),
@@ -315,6 +323,7 @@ export function PendingSubmissionBubble({ submission, loadImage, renderFactorySl
       renderFactorySlot={renderFactorySlot}
       loadImage={loadImage}
       pending={submission.placement === 'steering'}
+      {...submission.placement === 'transcript' ? { voiceSubmittedAt: submission.time } : {}}
       echo
       actions={text => (
         <MessageIconActions
