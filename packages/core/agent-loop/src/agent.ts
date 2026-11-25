@@ -107,7 +107,9 @@ const quickPrompt = [
   'On this first pass, answer directly if you can give a useful answer immediately.',
   'If the user explicitly requests current sources, an action, or genuinely deeper reasoning,',
   'call request_continuation with the appropriate reason instead of giving a preliminary answer.',
-  'Use it only when the requested result actually requires another step.',
+  'Inspect the project when the facts are absent from the available context. Answer from deployment context when it suffices.',
+  'For project files or configuration use needs_action. For public documentation use needs_sources.',
+  'Invoke the declared function through the tool interface. Never print tool syntax in your answer.',
 ].join(' ')
 
 /** Remove adapter-derived values before plugins propose the next request config. */
@@ -532,7 +534,12 @@ export class ReactLoopAgent implements Agent {
     const quick = supervisor !== undefined && step === 1
       && ['deepseek-flash', 'claude-opus-5-5'].includes(decision.selection.model)
     const light = quick || (final && supervisor.reason === 'general_question')
-    const renderedPrompt = quick ? `${renderPrompt(assembly)}\n\n${quickPrompt}` : renderPrompt(assembly)
+    const deploymentContext = supervisor ? process.env.AI_CONTROL_DEPLOYMENT_CONTEXT?.trim().slice(0, 2000) : undefined
+    const renderedPrompt = [
+      renderPrompt(assembly),
+      deploymentContext && `AI Control deployment context. Use only for questions about this deployment: ${deploymentContext}`,
+      quick && quickPrompt,
+    ].filter(Boolean).join('\n\n')
     const tools = quick ? [continuationTool] : assembly.tools
     let firstAttempt = true
     while (true) {
@@ -571,9 +578,12 @@ export class ReactLoopAgent implements Agent {
         }
       }
       if (firstAttempt && final) {
-        const instruction = supervisor?.reason === 'clarify' || supervisor?.reason === 'ambiguous_input'
-          ? 'Ask the user a concise clarifying question if the available information is insufficient.'
-          : 'Finish the answer using available information. State any important limits or unverified points.'
+        const instruction = [
+          'This is the final response. No tools are available. Never print commands as tool calls or invent inspection results.',
+          supervisor?.reason === 'clarify' || supervisor?.reason === 'ambiguous_input'
+            ? 'Ask one concise question if the available information is insufficient.'
+            : 'Answer using the evidence available. If project-specific information is missing, say what you need to verify.',
+        ].join(' ')
         this.session.append('user/message', createUserMessage({
           source: { kind: 'runtime-context', form: 'instructions' }, content: [{ type: 'text', text: instruction }],
         }), { surfaceOp: 'append' })
