@@ -48,13 +48,13 @@ Recheck the admission points for retries, tool batches and subsequent requests w
 
 ## Контракт параллельного цикла
 
-После принятия пользовательского ввода, включая расшифровку, первый запрос выбранной модели и классификация Supervisor запускаются независимо. Первый запрос получает ограничение выходных токенов до классификации. Декларации инструментов можно передать модели сразу. Фактические вызовы инструментов ждут допуска по бюджету и проходят штатные разрешения. Готовый ответ без инструментов завершает ход сразу, отменяя незавершённую классификацию.
+После принятия пользовательского ввода, включая расшифровку, первый запрос выбранной модели и классификация Supervisor запускаются независимо. Первый запрос получает ограничение выходных токенов до классификации. Первый запрос видит только служебное продолжение. Фактические вызовы инструментов ждут допуска по бюджету и проходят штатные разрешения. Готовый ответ без инструментов завершает ход сразу, отменяя незавершённую классификацию.
 
 Supervisor использует отдельный ключ `DEEP_SEEK_Supervisor`. Выбранная модель Worker сохраняется. Решение Supervisor действует на следующие действия цикла, поскольку уже отправленный запрос изменить нельзя.
 
 Бюджет учитывает фактические попытки Worker, открытые шаги, число запрошенных инструментов в партии и время. При достижении мягкой границы выполняется ограниченная переоценка. Supervisor получает исходную задачу, краткий видимый прогресс и счётчики. Продление даёт ограниченную порцию работы в пределах жёсткого лимита. При отказе Supervisor, недостатке данных или исчерпании лимита цикл резервирует один запрос без инструментов для ответа по имеющимся данным или уточнения. Отмена хода прерывает Worker и Supervisor.
 
-Обычный бюджет допускает до 3 запросов, 3 шагов, 4 инструментов и 25 секунд. Запасной бюджет допускает до 2 запросов, 2 шагов, 2 инструментов и 15 секунд. Жёсткий предел исследовательской части — 8 запросов, 7 шагов, 12 инструментов и 90 секунд. Возможны два ограниченных продления. Для финального запроса отдельно отведено до 20 секунд. Таймаут каждого обращения к Supervisor — 2,5 секунды.
+Обычный бюджет допускает до 3 запросов, 3 шагов, 4 инструментов и 25 секунд. Запасной бюджет допускает до 2 запросов, 2 шагов, 2 инструментов и 15 секунд. Жёсткий предел исследовательской части — 8 запросов, 7 шагов, 12 инструментов и 90 секунд. Возможны два ограниченных продления. Для финального запроса отдельно отведено до 35 секунд. Таймаут каждого обращения к Supervisor — 2,5 секунды.
 
 ## Parallel Supervisor replay
 
@@ -96,3 +96,25 @@ The Palisade baseline on the green Dima instance took 22.459 s, with two Worker 
 Source continuation opens only `web_search` and `web_fetch` from the normal scoped tool set. Its initial grant is still bounded and can be reviewed. A hard boundary is rechecked after waiting for classification or review. The review receives counts of successful and failed tool outcomes as well as the available progress summary. Decisions from the dedicated model are requested as JSON and validated against the allowed decision vocabulary.
 
 Final synthesis uses the lowest supported effort and has a separate 35-second deadline. A timeout persists any visible partial response, records `TIMEOUT`, and explains that the user can retry. A user cancellation still records the ordinary aborted outcome.
+
+## Palisade regression replay
+
+Same recorded question on Flash, replayed as text in three fresh Chrome sessions in an isolated red profile. Timings are seconds from the server turn start. The baseline voice turn took 0.101 s to prepare, so the comparison is primarily about the agent loop. “First text” includes preliminary visible text when present.
+
+| Scenario | Policy | First text | Total | Steps | Tools attempted / succeeded | Result |
+|---|---|---:|---:|---:|---:|---|
+| Palisade, original incident | 4 | 1.58 | 22.46 | 2 | 0 / 0 | Terminal timeout, no answer |
+| Palisade, replay 1 | 5 | 31.81 | 41.06 | 3 | 1 / 1 | Answer with sources and qualification |
+| Palisade, replay 2 | 5 | 25.80 | 33.48 | 4 | 1 / 1 | Answer with sources |
+| Palisade, replay 3 | 5 | 31.29 | 36.49 | 4 | 1 / 1 | Answer with sources |
+| Arithmetic | 5 | 1.58 | 1.62 | 1 | 0 / 0 | 105 |
+| AI Control API inventory | 5 | 1.21 | 2.71 | 1 | 0 / 0 | Used the red deployment inventory |
+| Insurance | 5 | 1.25 | 4.40 | 1 | 0 / 0 | Differentiated insurance types |
+| Registration follow-up | 5 | 1.15 | 4.24 | 1 | 0 / 0 | Used vehicle context from first turn |
+| Three-box arithmetic | 5 | 1.01 | 2.34 | 1 | 0 / 0 | Solved using the provided numbers |
+| Ambiguous Palisade option | 5 | 17.42 | 21.06 | 4 | 1 / 1 | Asked which option the user meant, after an avoidable lookup |
+| Request for official DeepSeek documentation | 5 | 12.73 | 15.44 | 4 | 2 / 2 | Responded after using web tools |
+
+Palisade responses distinguished the seven- and eight-seat layouts, with conclusions scoped to available sources. The replay does not independently certify fit with a particular child seat or market configuration. The fix restores a useful response at the cost of longer completion than the old failing run. The latency to useful text in this case and the unnecessary search on an ambiguous follow-up remain optimization work. The initial DEEP and DIRECT decisions both occurred in successful source replays.
+
+The broad agent-loop, web-tool, and Chat UI run had 824 passing tests. Six existing Chat UI failures matched the same six failures at the previous green release in a focused baseline run. A focused permission test passed both the normal admission and denial branches. An isolated Chrome copy of the interrupted Palisade attempt showed both the saved partial answer and the retry guidance, without displaying UNKNOWN or the internal continuation call.

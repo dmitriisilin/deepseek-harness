@@ -2006,7 +2006,7 @@ describe('parallel Supervisor integration', () => {
     expect(adapter.requests[0]?.maxTokens).toBeLessThanOrEqual(8192)
   })
 
-  it('runs an admitted continuation with normal tools and restores the selected effort', async () => {
+  it.each([false, true])('runs an admitted continuation with normal permissions (denied: %s)', async (denied) => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
     onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
@@ -2024,6 +2024,7 @@ describe('parallel Supervisor integration', () => {
     ctx.tools.register(defineContentToolFixture({ name: 'web_search', description: '', parameters: {}, execute }))
     const unrelated = vi.fn(async () => [{ type: 'text' as const, text: 'Unrelated local tool' }])
     ctx.tools.register(defineContentToolFixture({ name: 'unrelated', description: '', parameters: {}, execute: unrelated }))
+    if (denied) ctx.on('tools/pre-execute', async () => ({ kind: 'deny' as const, reason: 'test policy' }))
     const agent = await ctx.agentLoop.create(SessionId('quick-continuation'), { provider: 'mock', model: 'claude-opus-5-5' })
     const frames: AssistantStreamFrame[] = []
     ctx.on('agent/assistant-stream', ({ frame }) => { frames.push(frame) })
@@ -2033,7 +2034,9 @@ describe('parallel Supervisor integration', () => {
     expect(adapter.requests.map(request => request.reasoningEffort)).toEqual(['low', 'high', 'high'])
     expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toEqual(['request_continuation'])
     expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toEqual(['web_search'])
-    expect(execute).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledTimes(denied ? 0 : 1)
+    const result = agent.session.snapshotEvents().find(event => event.type === 'tool/result')
+    expect(result?.data.message.isError).toBe(denied)
     expect(unrelated).not.toHaveBeenCalled()
     expect(JSON.stringify(frames)).not.toContain('request_continuation')
     expect(agent.session.deriveMessages().flatMap(message => message.content).some(block =>

@@ -2687,6 +2687,19 @@ describe('ChatView', () => {
     expect(view.queryByRole('button', { name: '去充值' })).toBeNull()
   })
 
+  it('keeps a partial answer visible next to the final Supervisor timeout', () => {
+    const message = 'The model ran out of time to finish the answer. Any partial answer is kept. Retry the question to continue.'
+    const h = makeHarness({ nodes: [
+      user(1, 'Compare the available sources'),
+      { ...assistant(2, 'The first source confirms the difference.'), interrupted: true },
+      { ...turnError(3, 'TIMEOUT'), message },
+    ] })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByText('The first source confirms the difference.')).toBeTruthy()
+    expect(view.getByRole('status').textContent).toContain(message)
+    expect(view.queryByText('UNKNOWN')).toBeNull()
+  })
+
   it('renders the max-tokens notice with localized guidance, distinct from turn errors', () => {
     const h = makeHarness({ nodes: [user(1, 'try'), assistant(2, 'truncated'), turnMaxTokens(3)] })
     const view = render(<h.ChatView {...h.props} />)
