@@ -78,3 +78,28 @@
     height: 44px;
   }
 }
+
+.sendingMic {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.sendingMic::after {
+  position: absolute;
+  inset: 4px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  content: '';
+  animation: sending-mic-spin 0.85s linear infinite;
+}
+
+@keyframes sending-mic-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sendingMic::after { animation: none; }
+}

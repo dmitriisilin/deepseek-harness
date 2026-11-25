@@ -3,7 +3,7 @@ import type {
   ComposerAttachment, ComposerAttachmentsProps, ComposerImageAttachment,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
-  IconCloseFillRegular, IconRefreshOutlineRegular, IconWarningOutlineRegular, Tooltip,
+  isVoiceRecordingName, IconCloseFillRegular, IconRefreshOutlineRegular, IconWarningOutlineRegular, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { AttachmentRail } from '../AttachmentRail.tsx'
 import type { AttachmentRailItem } from '../AttachmentRail.tsx'
@@ -68,9 +68,12 @@ export function ComposerAttachments({
               const attachment = item.attachment
               if (attachment.kind === 'file') {
                 const upload = uploads[attachment.id]
+                const voice = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red' && isVoiceRecordingName(attachment.file.name)
+                const name = voice ? t('file.voiceMessage') : attachment.file.name || t('file.label')
                 return (
                   <FileCard
-                    name={attachment.file.name || t('file.label')}
+                    name={name}
+                    voice={voice}
                     bytes={attachment.file.size}
                     state={upload === undefined || upload.status === 'uploading'
                       ? 'uploading'
@@ -78,7 +81,7 @@ export function ComposerAttachments({
                     {...upload?.status === 'uploading' && upload.total !== undefined && upload.total > 0
                       ? { progress: upload.loaded / upload.total }
                       : {}}
-                    labels={fileCardLabels(t, attachment.file.name)}
+                    labels={fileCardLabels(t, name)}
                     onRemove={() => { onRemoveAttachment(attachment.id) }}
                     onRetry={() => { onRetryFile(attachment.id) }}
                   />

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { PropsRenderFactories, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UserTextFacts } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { JsonBlock, StateDot, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { isVoiceRecordingName, JsonBlock, StateDot, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps, UserContentAttachment, UserContentData, UserContentInput,
 } from '../contract/slots.ts'
@@ -39,7 +39,7 @@ function contentParts(content: readonly unknown[]): {
   const voiceTranscript = typeof document !== 'undefined'
     && document.documentElement.dataset.aiControl === 'red'
     && attachments.some(attachment => attachment.type === 'file'
-      && /^ai-center-voice-[0-9a-f-]{36}\.(?:wav|webm|mp4)$/u.test(attachment.file.name))
+      && isVoiceRecordingName(attachment.file.name))
   const text = voiceTranscript
     ? texts.map(part => part.replace(/^\[Voice message transcript\]\r?\n/u, '')).join('')
     : texts.join('')

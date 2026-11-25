@@ -1,4 +1,4 @@
-import { fileExtension, FileTypeIcon, fileSizeText, IconCloseFillRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { fileExtension, FileTypeIcon, fileSizeText, IconMicrophoneOutlineRegular, IconCloseFillRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './FileCard.module.css'
 
 /** Localized strings consumed by one pending-file card. */
@@ -20,10 +20,11 @@ export type FileCardState = 'uploading' | 'ready' | 'error'
 
 /** One pending file card: type glyph, name, size or upload status, remove, retry. */
 export function FileCard({
-  name, bytes, state, progress, labels, onRemove, onRetry,
+  name, bytes, state, progress, labels, voice = false, onRemove, onRetry,
 }: {
   name: string
   bytes: number
+  voice?: boolean
   state: FileCardState
   progress?: number
   labels: FileCardLabels
@@ -35,7 +36,7 @@ export function FileCard({
     ? labels.uploading
     : state === 'error'
       ? labels.failed
-      : [extension, fileSizeText(bytes)].filter(part => part !== '').join(' ')
+      : voice ? '' : [extension, fileSizeText(bytes)].filter(part => part !== '').join(' ')
   const retryable = state === 'error'
   return (
     <div
@@ -45,7 +46,7 @@ export function FileCard({
       <span className={css.icon} aria-hidden>
         {state === 'uploading'
           ? <span className={css.spinner} />
-          : <FileTypeIcon path={name} />}
+          : voice ? <IconMicrophoneOutlineRegular size={22} /> : <FileTypeIcon path={name} />}
       </span>
       {retryable
         ? (
@@ -57,7 +58,7 @@ export function FileCard({
         : (
           <span className={css.body} aria-label={labels.label}>
             <span className={css.name}>{name}</span>
-            <span className={css.meta}>{meta}</span>
+            {meta && <span className={css.meta}>{meta}</span>}
           </span>
         )}
       <button

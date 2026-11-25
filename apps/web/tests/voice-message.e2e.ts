@@ -133,9 +133,27 @@ it.skipIf(webSnapshotMode() === 'record').each([
   const upload = streaming ? page.waitForRequest((request) => {
     const url = new URL(request.url())
     return url.pathname === '/api/session/uploadFileBinary'
-      && url.searchParams.get('name')?.startsWith('ai-center-voice-')
+      && url.searchParams.get('name')?.startsWith('ai-center-voice-') === true
   }) : undefined
-  await send.click()
+  const checkSending = streaming && !mixed && !ambiguous && !interrupted
+    && process.env.DSH_WEB_BRAND === 'ai-control-red'
+  const finalization = Promise.withResolvers<undefined>()
+  if (checkSending) await page.route('**/api/session/uploadFileBinary?*', async (route) => {
+    if (new URL(route.request().url()).searchParams.has('voiceChunks')) await finalization.promise
+    await route.continue()
+  })
+  try {
+    await send.click()
+    if (checkSending) {
+      await page.getByRole('status', { name: 'Sending voice message…' }).waitFor()
+      expect(await page.getByText(/^ai-center-voice-/u).count()).toBe(0)
+      if (process.env.AI_CONTROL_SCREENSHOTS) {
+        await page.screenshot({ path: join(process.env.AI_CONTROL_SCREENSHOTS, 'voice-sending-412-light.png') })
+      }
+    }
+  } finally {
+    finalization.resolve(undefined)
+  }
   if (upload) {
     const request = await upload
     expect(new URL(request.url()).searchParams.has('voiceChunks')).toBe(!ambiguous)
@@ -169,5 +187,8 @@ it.skipIf(webSnapshotMode() === 'record').each([
     const bubble = page.locator('[data-chat-flow-kind="user"] [class*="userRow"]').last()
     await bubble.getByText(transcript, { exact: !mixed }).first().waitFor()
     expect(await bubble.innerText()).not.toContain('[Voice message transcript]')
+    await page.locator('[data-message-attachments]').getByText('Voice message', { exact: true }).last().waitFor()
+    expect(await page.getByText(/^ai-center-voice-/u).count()).toBe(0)
+    expect(await page.locator('[data-voice-sending]').count()).toBe(0)
   }
 })

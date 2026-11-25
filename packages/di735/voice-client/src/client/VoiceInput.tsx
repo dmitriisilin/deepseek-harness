@@ -44,10 +44,10 @@ export interface VoiceInputInjected extends VoiceInputActions {
 }
 
 /** Composer-owned expansion and draft actions; preferences stay in plugin settings. */
-export type VoiceInputProps = Pick<PropsRuntime<'conversation.input.activity'>, 'sessionId' | 'inputActions' | 'locked' | 'onActiveChange' | 'onSubmitReadyChange' | 'addFiles'>
+export type VoiceInputProps = Pick<PropsRuntime<'conversation.input.activity'>, 'sessionId' | 'inputActions' | 'locked' | 'onActiveChange' | 'onSubmitReadyChange' | 'addFiles' | 'voiceSending'>
   & PropsLocale<typeof NS> & InjectFace<VoiceInputInjected>
 
-type Phase = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'feedback'
+type Phase = 'sending' | 'idle' | 'requesting' | 'recording' | 'transcribing' | 'feedback'
 interface ActiveRecording {
   readonly capture: Recording
   readonly abort: AbortController
@@ -69,7 +69,8 @@ async function disposeRecording(capture: Recording): Promise<void> {
 }
 
 /** Render a compact microphone or an expanded capture, transcription, or retry row. */
-export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, onSubmitReadyChange, addFiles, registerSubmitGate,
+export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, onSubmitReadyChange, addFiles, voiceSending,
+  registerSubmitGate,
   createRecording, transcribe, openSettings, useSpeechReadiness, usePluginNavigation, t }: VoiceInputProps) {
   const readiness = useSpeechReadiness(value => value), catalog = readiness.catalog
   const navigable = usePluginNavigation(present => present)
@@ -81,7 +82,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
   useEffect(() => { if (usable) setSetupOpen(false) }, [usable])
   const current = useRef<ActiveRecording>(), generation = useRef(0)
   const pendingFile = useRef<File>()
-  const expanded = phase !== 'idle'
+  const expanded = phase !== 'idle' && phase !== 'sending'
   useLayoutEffect(() => { onActiveChange(expanded); return () => { onActiveChange(false) } }, [expanded, onActiveChange])
 
   const cancel = (): void => {
@@ -151,7 +152,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
     const stoppedAt = performance.now()
     active.phase = 'transcribing'
     const run = generation.current
-    clearTimeout(active.timer); setPhase('transcribing')
+    clearTimeout(active.timer); setPhase(mode === 'send' ? 'sending' : 'transcribing')
     try {
       const audio = await active.capture.stop(active.maxDurationSeconds, active.compressedAudio)
       const format = audio instanceof Blob ? (audio.type.startsWith('audio/webm') ? 'webm' : 'mp4') : undefined
@@ -246,6 +247,11 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
       await disposeRecording(active.capture)
       if (run === generation.current) { current.current = undefined; feedback(failureText(failure, t)) }
     }
+  }
+  if (phase === 'sending' || voiceSending) {
+    return <span className={css.sendingMic} role="status" aria-label={t('sendingVoice')} data-voice-sending>
+      <IconMicrophoneOutlineRegular size={22} aria-hidden />
+    </span>
   }
   if (!expanded) return <>
     <Tooltip label={t('dictate')} disabled={!usable} side="top" portal>

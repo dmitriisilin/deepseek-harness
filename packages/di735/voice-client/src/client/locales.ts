@@ -81,6 +81,7 @@ export const zh = {
 
   cloudReady: '云端语音识别已就绪。',
   discard: '丢弃识别文字',
+  sendingVoice: '正在发送语音…',
   transcribingShort: '识别中…', wakingShort: '唤醒中…',
   provider: '识别服务', language: '识别语言',
   inputDevice: '输入设备',
@@ -186,6 +187,7 @@ export const en: Record<VoiceKey, string> = {
 
   cloudReady: 'Cloud speech recognition is ready.',
   discard: 'Discard transcript',
+  sendingVoice: 'Sending voice message…',
   transcribingShort: 'Transcribing…', wakingShort: 'Waking…',
   provider: 'Recognition service', language: 'Recognition language',
   inputDevice: 'Input device',
@@ -294,6 +296,7 @@ export const ja = {
   'preparation.cancelling': '準備をキャンセル中…',
   'cloudReady': 'クラウド音声認識の準備ができました。',
   'discard': '文字起こしを破棄',
+  sendingVoice: '音声メッセージを送信中…',
   'transcribingShort': '文字起こし中…',
   'wakingShort': '起動中…',
   'provider': '認識サービス',
@@ -409,6 +412,7 @@ export const es = {
 
   cloudReady: 'El reconocimiento de voz en la nube está listo.',
   discard: 'Descartar transcripción',
+  sendingVoice: 'Enviando mensaje de voz…',
   transcribingShort: 'Transcribiendo…', wakingShort: 'Despertando…',
   provider: 'Servicio de reconocimiento', language: 'Idioma de reconocimiento',
   inputDevice: 'Dispositivo de entrada',
@@ -511,6 +515,7 @@ export const fr = {
 
   cloudReady: 'La reconnaissance vocale dans le cloud est prête.',
   discard: 'Supprimer la transcription',
+  sendingVoice: 'Envoi du message vocal…',
   transcribingShort: 'Transcription…', wakingShort: 'Le réveil…',
   provider: 'Service de reconnaissance', language: 'Langue de reconnaissance',
   inputDevice: "Périphérique d'entrée",
@@ -613,6 +618,7 @@ export const de = {
 
   cloudReady: 'Die Cloud-Spracherkennung ist fertig.',
   discard: 'Transkript verwerfen',
+  sendingVoice: 'Sprachnachricht wird gesendet…',
   transcribingShort: 'Transkribieren…', wakingShort: 'Aufwachen…',
   provider: 'Anerkennungsdienst', language: 'Erkennungssprache',
   inputDevice: 'Eingabegerät',
@@ -715,6 +721,7 @@ export const ru = {
 
   cloudReady: 'Облачное распознавание речи готово.',
   discard: 'Удалить расшифровку',
+  sendingVoice: 'Отправляем голосовое сообщение…',
   transcribingShort: 'Расшифровка…', wakingShort: 'Пробуждение…',
   provider: 'Служба распознавания', language: 'Язык распознавания',
   inputDevice: 'Устройство ввода',
@@ -817,6 +824,7 @@ export const pt = {
 
   cloudReady: 'O reconhecimento de fala na nuvem está pronto.',
   discard: 'Descartar transcrição',
+  sendingVoice: 'Enviando mensagem de voz…',
   transcribingShort: 'Transcrevendo…', wakingShort: 'Acordando…',
   provider: 'Serviço de reconhecimento', language: 'Linguagem de reconhecimento',
   inputDevice: 'Dispositivo de entrada',

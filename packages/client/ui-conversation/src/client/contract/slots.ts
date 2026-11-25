@@ -634,6 +634,8 @@ export interface InputControlOwnerProps {
 
 /** A toolbar activity hides ordinary accessory controls while expanded; its occupant must release expansion on unmount. */
 export interface InputActivityOwnerProps extends InputControlOwnerProps {
+  /** A voice attachment is transferring or its message is awaiting Host admission. */
+  voiceSending?: boolean
   /** @param active - whether the occupant needs the toolbar width before the submit action. */
   onActiveChange: (active: boolean) => void
   /** Enable Send for an activity that can add content before the draft is submitted. */

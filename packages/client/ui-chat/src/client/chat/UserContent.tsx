@@ -1,7 +1,7 @@
 /** Reusable user contents inside a caller-owned message row. */
 import { Fragment } from 'react'
 import type { FactoryComponentPropsOf } from '@deepseek-ai/dsh-client-ui-slots'
-import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, UserMessageBubble } from '@deepseek-ai/dsh-client-ui-primitives'
+import { fileExtension, FileTypeIcon, fileSizeText, IconMicrophoneOutlineRegular, isVoiceRecordingName, JsonBlock, UserMessageBubble } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './MessageItem.module.css'
 
 const EMPTY_LABELS: readonly string[] = []
@@ -15,6 +15,7 @@ const EMPTY_LABELS: readonly string[] = []
 export function UserContent({ content, loadImage, facts, interactive = false, ellipsis = false, renderSlot, renderFactorySlot, t }:
 FactoryComponentPropsOf<'conversation.chat.user.content'>) {
   const { text, attachments, extraBlocks, referenceLabels = EMPTY_LABELS } = content
+  const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   const compactImages = attachments.length > 1
   const truncated = (total: number): string => t('json.truncated', { total })
   const showBubble = text !== '' || extraBlocks.length > 0
@@ -30,7 +31,12 @@ FactoryComponentPropsOf<'conversation.chat.user.content'>) {
                 })}
               </Fragment>
             )
-            : (
+            : aiControl && isVoiceRecordingName(attachment.file.name) ? (
+              <span key={`file:${index}`} className={css.voiceMessage}>
+                <IconMicrophoneOutlineRegular size={18} aria-hidden />
+                {t('file.voiceMessage')}
+              </span>
+            ) : (
               <span key={`file:${index}`} className={css.fileCard} title={attachment.file.name}>
                 <FileTypeIcon path={attachment.file.name} className={css.fileIcon} />
                 <span className={css.fileContent}>

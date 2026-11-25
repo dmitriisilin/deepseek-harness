@@ -17,7 +17,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { ChangeEvent, KeyboardEvent, MouseEvent } from 'react'
 import clsx from 'clsx'
 import {
-  focusWithoutRing, IconPlusOutlineMedium, IconTriangleRightFillRegular, IconWarningOutlineRegular, isMobileDevice, Menu, Toast, Tooltip,
+  focusWithoutRing, IconPlusOutlineMedium, IconTriangleRightFillRegular, IconWarningOutlineRegular, isMobileDevice, isVoiceRecordingName,
+  Menu, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -164,6 +165,13 @@ export const InputBar = memo(function InputBar({
   const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting' || input?.phase === 'sending'
   // The message waits for the Host to accept it; Send shows progress instead of the arrow.
   const sending = input?.phase === 'sending'
+  const voiceSending = aiControl && attachments.some((attachment) => {
+    if (attachment.kind !== 'file' || !isVoiceRecordingName(attachment.file.name)) return false
+    const status = uploads[attachment.id]?.status
+    return status !== 'error' && (machineBusy || status !== 'ready')
+  })
+  const visibleAttachments = voiceSending ? attachments.filter(attachment => attachment.kind !== 'file'
+    || !isVoiceRecordingName(attachment.file.name) || uploads[attachment.id]?.status === 'error') : attachments
   // The no-workspace surface remains the resident DOM node but acts as the
   // existing picker trigger. Message controls stay locked until a Session
   // exists; the trigger itself is read-only rather than disabled so pointer
@@ -475,7 +483,7 @@ export const InputBar = memo(function InputBar({
         )}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
         {renderSlot('conversation.input.attachments', {
-          attachments,
+          attachments: visibleAttachments,
           canAcceptDrop,
           onAddFiles: intakeFiles,
           onRemoveAttachment: (id) => { removeAttachment?.(id) },
@@ -576,7 +584,7 @@ export const InputBar = memo(function InputBar({
               })}
             </div>
             {input === undefined || sessionId === undefined ? null : <div className={activity ? css.activityExpanded : css.activity}>
-              {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity, onSubmitReadyChange: setActivitySubmitReady, addFiles })}
+              {renderSlot('conversation.input.activity', { locked, onActiveChange: setActivity, onSubmitReadyChange: setActivitySubmitReady, addFiles, voiceSending })}
             </div>}
             {interruptible && !cancelDenied && (
               <Tooltip label={t('input.stop')} shortcutKeys={stopKeys} side="top" delayMs={500} disabled={stopAction === undefined} portal>
@@ -610,7 +618,7 @@ export const InputBar = memo(function InputBar({
                     <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
                       <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
                     </svg>
-                  ) : sending ? (
+                  ) : sending && !voiceSending ? (
                     <svg className={css.sendingSpinner} viewBox="0 0 16 16" width="16" height="16" aria-hidden>
                       <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
                       <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />

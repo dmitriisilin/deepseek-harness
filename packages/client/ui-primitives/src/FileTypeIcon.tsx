@@ -283,3 +283,8 @@ export function FileTypeIcon(props: FileTypeIconProps): ReactNode {
     ? <CodeFileIcon type={resolvedType} size={size} className={className} />
     : glyph(resolvedType, size, clsx(css.icon, css[resolvedType], className))
 }
+
+/** Identify attachments created by the AI Control microphone. */
+export function isVoiceRecordingName(name: string): boolean {
+  return /^ai-center-voice-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(?:wav|webm|mp4)$/u.test(name)
+}
