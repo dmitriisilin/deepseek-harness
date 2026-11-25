@@ -2005,4 +2005,74 @@ describe('parallel Supervisor integration', () => {
     expect(adapter.requests[0]?.model).toBe(model)
     expect(adapter.requests[0]?.maxTokens).toBeLessThanOrEqual(8192)
   })
+
+  it.each(['ACTION', 'DIRECT', 'error'])('gates an entire tool batch on %s', async (outcome) => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const classifier = Promise.withResolvers<Response>()
+    vi.stubGlobal('fetch', vi.fn(() => classifier.promise))
+    const first = toolCallResponse('a', 'echo', { text: 'one' })
+    const second = toolCallResponse('b', 'echo', { text: 'two' })
+    const adapter = new MockAdapter([
+      [...first.slice(0, -2), ...second.slice(0, -2).map(chunk => ({ ...chunk, index: 1 })), ...first.slice(-2)],
+      textResponse('done'),
+    ])
+    const ctx = await harness(adapter)
+    const execute = vi.fn(async () => [{ type: 'text' as const, text: 'result' }])
+    ctx.tools.register(defineContentToolFixture({ name: 'echo', description: '', parameters: { text: { type: 'string' } }, execute }))
+    const agent = await ctx.agentLoop.create(SessionId('batch-supervisor'), { provider: 'mock', model: 'mock' })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Run both operations')
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    expect(execute).not.toHaveBeenCalled()
+    classifier.resolve(outcome === 'error' ? new Response(null, { status: 503 }) : Response.json({
+      choices: [{ message: { content: outcome } }],
+    }))
+    await idle
+    expect(execute).toHaveBeenCalledTimes(outcome === 'DIRECT' ? 0 : 2)
+    expect(adapter.requests).toHaveLength(2)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(2)
+  })
+  it('bounds provider retries when the Supervisor fails', async () => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 503 })))
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const failure: StreamChunk[] = [{ type: 'finish', reason: { kind: 'error', failure: { message: 'retry', code: 'SERVER' } } }]
+    const adapter = new MockAdapter([failure, failure, textResponse('partial answer')])
+    const ctx = await harness(adapter)
+    ctx.on('agent/request-error', async () => ({ kind: 'retry' as const }))
+    const agent = await ctx.agentLoop.create(SessionId('budget-retry'), { provider: 'mock', model: 'mock' })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'An ordinary request')
+    await idle
+    expect(adapter.requests).toHaveLength(3)
+    expect(adapter.requests[2]?.tools ?? []).toEqual([])
+  })
+
+  it('aborts both in-flight requests on user cancellation', async () => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const classifier = Promise.withResolvers<AbortSignal>()
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => {
+      const signal = options.signal!
+      classifier.resolve(signal)
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }))
+    const adapter = new MockAdapter(['hang'])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('budget-cancel'), { provider: 'mock', model: 'mock' })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'A request to cancel')
+    const classifierSignal = await classifier.promise
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    agent.cancel({ kind: 'user' })
+    await idle
+    expect(classifierSignal.aborted).toBe(true)
+    expect(adapter.requests[0]?.signal?.aborted).toBe(true)
+  })
 })

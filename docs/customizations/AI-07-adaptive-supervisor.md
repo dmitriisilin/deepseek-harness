@@ -55,3 +55,24 @@ Supervisor использует отдельный ключ `DEEP_SEEK_Superviso
 Бюджет учитывает фактические попытки Worker, открытые шаги, число запрошенных инструментов в партии и время. При достижении мягкой границы выполняется ограниченная переоценка. Supervisor получает исходную задачу, краткий видимый прогресс и счётчики. Продление даёт ограниченную порцию работы в пределах жёсткого лимита. При отказе Supervisor, недостатке данных или исчерпании лимита цикл резервирует один запрос без инструментов для ответа по имеющимся данным или уточнения. Отмена хода прерывает Worker и Supervisor.
 
 Обычный бюджет допускает до 3 запросов, 3 шагов, 4 инструментов и 25 секунд. Запасной бюджет допускает до 2 запросов, 2 шагов, 2 инструментов и 15 секунд. Жёсткий предел исследовательской части — 8 запросов, 7 шагов, 12 инструментов и 90 секунд. Возможны два ограниченных продления. Для финального запроса отдельно отведено до 20 секунд. Таймаут каждого обращения к Supervisor — 2,5 секунды.
+
+## Parallel Supervisor replay
+
+Text replay in isolated Chrome profiles with the red service configuration. Each row is a single observation. The two vehicle questions share a chat. Times are server-side seconds from turn start. The previous Flash policy provides the baseline for three questions.
+
+| Worker | Question | First text before → after | Total before → after | Steps before → after | Tools before → after |
+|---|---|---:|---:|---:|---:|
+| Flash | 15 × 7 | — → 2.486 | — → 2.930 | — → 1 | — → 0 |
+| Flash | Flash vs Pro | 31.605 → 25.363 | 34.990 → 29.963 | 5 → 4 | 7 → 4 |
+| Flash | Insurance with dented doors | 2.938 → 17.152 | 6.284 → 21.563 | 1 → 2 | 0 → 0 |
+| Flash | Registration follow-up | 2.277 → 14.159 | 5.944 → 18.039 | 1 → 1 | 0 → 0 |
+| Opus | 15 × 7 | — → 2.583 | — → 2.718 | — → 1 | — → 0 |
+| Opus | Flash vs Pro | — → 11.710 | — → 13.198 | — → 2 | — → 0 |
+| Opus | Insurance with dented doors | — → 7.002 | — → 13.816 | — → 1 | — → 0 |
+| Opus | Registration follow-up | — → 9.170 | — → 15.650 | — → 1 | — → 0 |
+
+Both Workers returned 105, distinguished compulsory and voluntary insurance, and carried the vehicle context into the registration follow-up. Flash gave a comparison with claims based on its available evidence. Opus explicitly noted that it had not verified the model comparison from current sources. The replay checked relevance and continuity. It did not independently fact-check the provider or legal claims.
+
+The Flash model comparison hit a checkpoint. The review response failed validation, and the reserved synthesis request completed. Tests separately exercise valid bounded extensions. Flash retained the selected high reasoning effort in the initial request. The old policy disabled reasoning for direct turns and paid the classifier latency upfront. The timing regressions show that a parallel start alone does not recover the old direct-route latency.
+
+The Supervisor completed in 1.0–1.8 s per observed call. Usage is available per call under `supervisor.calls`; it is logged separately from the Worker. Each insurance turn was sent as text, so this table excludes speech recognition.
