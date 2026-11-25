@@ -57,9 +57,10 @@ export class AssistantStreamAttempt {
   }
 
   /** Snapshot one chunk once, then feed durable compaction, assembly, and live publication. */
-  push(chunk: StreamChunk): void {
+  push(chunk: StreamChunk, publish = true): void {
     const timed = this.accumulator.push({ time: Date.now(), chunk })
     this.assembler.push(timed.chunk)
+    if (!publish) return
     this.emit({
       type: 'chunk',
       attemptId: this.attemptId,

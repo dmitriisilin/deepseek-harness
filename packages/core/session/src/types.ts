@@ -398,6 +398,8 @@ export interface SessionEventMap {
   'request/header': {
     header: EpochHeader
     reason: RequestHeaderReason
+    /** The user's effort choice when the driver temporarily overrode the effective effort. */
+    selectedReasoningEffort?: LlmCallConfig['reasoningEffort'] | null
     /** This request begins a distinct model-message series, independently of the header reason. */
     startsSeries?: true
   }

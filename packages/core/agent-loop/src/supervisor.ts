@@ -97,6 +97,18 @@ async function* supervisorStream(options: GenerateOptions): AsyncIterable<Stream
   if (body.usage) yield { type: 'usage', usage: { inputTokens: body.usage.prompt_tokens, outputTokens: body.usage.completion_tokens } }
 }
 
+type ContinuationReason = 'needs_sources' | 'needs_action' | 'needs_reasoning'
+
+export function continuationReason(raw: string): ContinuationReason | undefined {
+  try {
+    const reason: unknown = (JSON.parse(raw) as { reason?: unknown } | null)?.reason
+    if (reason === 'needs_sources' || reason === 'needs_action' || reason === 'needs_reasoning') return reason
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
 export const WORKER_OUTPUT_LIMIT = 8192
 const hard = { requests: 8, steps: 7, tools: 12, durationMs: 90000 }
 type Spend = { requests: number; steps: number; tools: number; durationMs: number }
@@ -161,13 +173,14 @@ export class SupervisorBudget {
   }
 
   /** Reserve one synthesis request even when further exploratory work is refused. */
-  async allow(spend: Spend, progress: string): Promise<boolean> {
+  async allow(spend: Spend, progress: string, continuation?: ContinuationReason): Promise<boolean> {
     if (this.final) return false
     if (Object.keys(hard).some(key => spend[key as keyof Spend] > hard[key as keyof Spend])) return this.finish('hard_limit')
     if (!this.limit) {
       const decision = await this.initial
       this.signal.throwIfAborted()
-      if (decision?.route === 'direct' || decision?.route === 'deep' || decision?.reason === 'ambiguous_input') {
+      if (decision?.route === 'direct' || (decision?.route === 'deep' && continuation !== 'needs_reasoning')
+        || decision?.reason === 'ambiguous_input') {
         return this.finish(decision.reason)
       }
       const fallback = decision?.reason === 'deadline' || decision?.reason === 'provider_error'
@@ -215,9 +228,9 @@ export class SupervisorBudget {
     return performance.now() - this.started
   }
 
-  workSignal(parent: AbortSignal): AbortSignal {
+  workSignal(parent: AbortSignal, cap = Infinity): AbortSignal {
     const duration = this.final ? 20000 : Math.max(1, Math.ceil(hard.durationMs - this.elapsed()))
-    return AbortSignal.any([parent, AbortSignal.timeout(duration)])
+    return AbortSignal.any([parent, AbortSignal.timeout(Math.min(duration, cap))])
   }
 
   finish(reason: string): false {

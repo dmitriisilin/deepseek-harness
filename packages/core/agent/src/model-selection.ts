@@ -71,7 +71,7 @@ const selectionSchema = z.object({
  */
 export const modelSelectionProjectionDefinition: Required<ProjectionDefinition<'modelSelection', ModelSelectionProjectionState>> = {
   key: 'modelSelection',
-  stateVersion: 3,
+  stateVersion: 4,
   stateSchema: z.object({ lastUsed: selectionSchema, pending: selectionSchema }),
   init: () => ({ lastUsed: null, pending: null }),
   apply: (state, event) => {
@@ -79,7 +79,10 @@ export const modelSelectionProjectionDefinition: Required<ProjectionDefinition<'
       return sameModelSelection(state.pending, event.data) ? state : { ...state, pending: event.data }
     }
     if (event.type !== 'request/header') return state
-    const lastUsed = selectionOfHeader(event.data.header)
+    const { header, selectedReasoningEffort } = event.data
+    const lastUsed = selectedReasoningEffort === undefined
+      ? selectionOfHeader(header)
+      : toSelection(header.config.provider, header.config.model, selectedReasoningEffort ?? undefined)
     const pending = sameModelSelection(state.pending, lastUsed) ? null : state.pending
     return sameModelSelection(state.lastUsed, lastUsed) && pending === state.pending ? state : { lastUsed, pending }
   },

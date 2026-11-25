@@ -22,6 +22,7 @@ import { AgentModel, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-ag
 import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   LlmError,
+  ReasoningEffortId,
   createAssistantMessage,
   createDeveloperMessage,
   createToolResultMessage,
@@ -43,7 +44,7 @@ import { ReactLoopInbox } from './inbox.ts'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { AssistantStreamAttempt } from './assistant-stream.ts'
 import { SystemPromptProjection } from './runtime-context.ts'
-import { SupervisorBudget, WORKER_OUTPUT_LIMIT } from './supervisor.ts'
+import { SupervisorBudget, WORKER_OUTPUT_LIMIT, continuationReason } from './supervisor.ts'
 
 /** Projected facts consumed by this driver; registration stays with the factory. */
 interface LoopProjections {
@@ -68,6 +69,7 @@ type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }
 interface TurnDiagnostics {
   started: number
   workerMs?: number
+  continuation?: string
   supervisor?: { calls: Omit<SupervisorBudget['calls'][number], 'started'>[]; extensions: number; reason?: string | undefined }
   firstTextMs?: number
   effort?: string
@@ -88,6 +90,25 @@ type PreparedStep =
     /** Admission shared by the step's declarations and dispatch; the turn disposes it after the step. */
     toolSet: ResolvedToolSet
   }
+
+const continuationTool = {
+  name: 'request_continuation',
+  description: 'Request the next step when a useful answer requires sources, an action, or deeper reasoning.',
+  parameters: {
+    type: 'object',
+    properties: {
+      reason: { type: 'string', enum: ['needs_sources', 'needs_action', 'needs_reasoning'] },
+    },
+    required: ['reason'],
+    additionalProperties: false,
+  },
+}
+const quickPrompt = [
+  'On this first pass, answer directly if you can give a useful answer immediately.',
+  'If the user explicitly requests current sources, an action, or genuinely deeper reasoning,',
+  'call request_continuation with the appropriate reason instead of giving a preliminary answer.',
+  'Use it only when the requested result actually requires another step.',
+].join(' ')
 
 /** Remove adapter-derived values before plugins propose the next request config. */
 function requestProposal(header: EpochHeader): LlmCallConfig {
@@ -477,7 +498,7 @@ export class ReactLoopAgent implements Agent {
         const { started, ...metrics } = diagnostics
         console.info(JSON.stringify({
           event: 'ai-control/turn', sessionId: this.session.id, turn, status: turnEnds?.kind,
-          policyVersion: supervisor ? 3 : 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
+          policyVersion: supervisor ? 4 : 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
         }))
       }
       try {
@@ -507,13 +528,17 @@ export class ReactLoopAgent implements Agent {
     signal.throwIfAborted()
 
     const { assembly } = decision
-    const renderedPrompt = renderPrompt(assembly)
     const final = supervisor?.final === true
+    const quick = supervisor !== undefined && step === 1
+      && ['deepseek-flash', 'claude-opus-5-5'].includes(decision.selection.model)
+    const light = quick || (final && supervisor.reason === 'general_question')
+    const renderedPrompt = quick ? `${renderPrompt(assembly)}\n\n${quickPrompt}` : renderPrompt(assembly)
+    const tools = quick ? [continuationTool] : assembly.tools
     let firstAttempt = true
     while (true) {
-      const requestSignal = supervisor?.workSignal(signal) ?? signal
+      const requestSignal = supervisor?.workSignal(signal, quick ? 12000 : undefined) ?? signal
       const { config, preparedCall } = await this.prepareRequest(
-        turn, step, decision.selection, requestSignal, supervisor ? WORKER_OUTPUT_LIMIT : undefined,
+        turn, step, decision.selection, requestSignal, supervisor ? WORKER_OUTPUT_LIMIT : undefined, light,
       )
       const currentContext = this.loopCtx.systemPrompt.refreshContext(assembly, {
         ...assembleContextFor(this, signal), modelSelection: decision.selection,
@@ -521,12 +546,13 @@ export class ReactLoopAgent implements Agent {
       const sections = renderContextSections(currentContext)
       const context = this.runtimeContext.project(sections)
       signal.throwIfAborted()
-      const startsRequestSeries = firstAttempt && decision.startsRequestSeries === true
+      const startsRequestSeries = firstAttempt
+        && (quick || (supervisor !== undefined && step === 2) || decision.startsRequestSeries === true)
       const commits = this.systemPrompt.project(renderedPrompt, {
         inHistory: preparedCall?.systemPromptUpdate === 'in-history',
         startsSeries: startsRequestSeries
           || this.requestSurfaceGeneration !== this.session.surface.contentGeneration
-          || (preparedCall?.toolUpdate === undefined && this.toolsChanged(assembly.tools)),
+          || (preparedCall?.toolUpdate === undefined && this.toolsChanged(tools)),
       })
       for (const { message, intent } of commits) {
         this.session.append('system/message', { turn, step, message }, intent)
@@ -556,7 +582,10 @@ export class ReactLoopAgent implements Agent {
         this.session.append('user/message', context, { surfaceOp: 'append' })
       }
       firstAttempt = false
-      const request = this.buildRequest(config, preparedCall, assembly.tools, { turn, step }, startsRequestSeries, requestSignal)
+      const request = this.buildRequest(
+        config, preparedCall, tools, { turn, step }, startsRequestSeries, requestSignal,
+        light ? decision.selection.reasoningEffort ?? null : undefined,
+      )
       const live = new AssistantStreamAttempt(
         this.session.id,
         ++this.assistantAttemptCounter,
@@ -566,6 +595,7 @@ export class ReactLoopAgent implements Agent {
         (frame) => { this.dispatch.emit('agent/assistant-stream', { frame }) },
       )
       let started = false
+      const controlBlocks = new Set<number>()
       const workerStarted = performance.now()
       try {
         if (diagnostics) {
@@ -578,7 +608,8 @@ export class ReactLoopAgent implements Agent {
         started = true
         for await (const chunk of stream) {
           requestSignal.throwIfAborted()
-          live.push(chunk)
+          if (quick && chunk.type === 'block-start' && chunk.blockType === 'tool-call') controlBlocks.add(chunk.index)
+          live.push(chunk, !('index' in chunk && controlBlocks.has(chunk.index)))
           if (diagnostics && diagnostics.firstTextMs === undefined && chunk.type === 'text-delta' && chunk.text.trim()) {
             diagnostics.firstTextMs = Math.round(performance.now() - diagnostics.started)
           }
@@ -670,6 +701,18 @@ export class ReactLoopAgent implements Agent {
             ...live.replayState !== undefined ? { replayState: live.replayState } : {},
           },
         })
+        if (quick && message.content.some(block => block.type === 'tool-call')) {
+          live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
+          const call = message.content.find(block => block.type === 'tool-call' && block.name === continuationTool.name)
+          const reason = call?.type === 'tool-call' ? continuationReason(call.arguments) : undefined
+          setProgress(reason ? `Worker requested continuation: ${reason}` : 'Invalid continuation request')
+          if (diagnostics) diagnostics.continuation = reason ?? 'invalid'
+          if (reason === undefined) supervisor.finish('invalid_continuation')
+          else if (diagnostics) await supervisor.allow({
+            requests: diagnostics.requests + 1, steps: step + 1, tools: diagnostics.tools, durationMs: supervisor.elapsed(),
+          }, `Worker requested continuation: ${reason}`, reason)
+          return null
+        }
         live.settle(
           'assistant/message',
           () => this.session.append('assistant/message', {
@@ -739,6 +782,7 @@ export class ReactLoopAgent implements Agent {
     selection: Readonly<ModelSelection>,
     signal: AbortSignal,
     outputLimit?: number,
+    light = false,
   ): Promise<{ config: LlmCallConfig; preparedCall?: PreparedLlmCall }> {
     const { session } = this
 
@@ -767,7 +811,13 @@ export class ReactLoopAgent implements Agent {
     let config: LlmCallConfig
     let preparedCall: PreparedLlmCall | undefined
     try {
-      preparedCall = await this.loopCtx.llm.prepareCall(proposedConfig, signal)
+      let effective = proposedConfig
+      if (light) {
+        const info = await this.loopCtx.llm.resolveModelInfo(selection.provider, selection.model, signal)
+        const effort = ['off', 'low'].find(value => info.reasoning?.efforts.some(item => item.id === value))
+        if (effort !== undefined) effective = { ...proposedConfig, reasoningEffort: ReasoningEffortId(effort) }
+      }
+      preparedCall = await this.loopCtx.llm.prepareCall(effective, signal)
       config = preparedCall.config
     } catch (error: unknown) {
       // Middleware may serve an unregistered route; terminal dispatch still requires an adapter.
@@ -786,6 +836,7 @@ export class ReactLoopAgent implements Agent {
     position: { turn: number; step: number },
     startsRequestSeries: boolean,
     signal: AbortSignal,
+    selectedReasoningEffort?: LlmCallConfig['reasoningEffort'] | null,
   ): GenerateOptions {
     const { session } = this
     const surfaceGeneration = session.surface.contentGeneration
@@ -797,11 +848,13 @@ export class ReactLoopAgent implements Agent {
     const baseline = this.session.requestHeader()
     const startsSeries = startsRequestSeries
       || this.requestSurfaceGeneration !== surfaceGeneration
+    const choice = selectedReasoningEffort === undefined ? {} : { selectedReasoningEffort }
     let headerSeq: SessionSeq | undefined
     if (!this.requestHeaderLogged) {
       // Compaction during the first resumed pre-step must still mark a new series.
       headerSeq = this.session.append('request/header', {
         header,
+        ...choice,
         reason: baseline === undefined ? 'initial' : 'resume',
         ...startsSeries ? { startsSeries: true } : {},
       }).seq
@@ -809,11 +862,12 @@ export class ReactLoopAgent implements Agent {
     } else if (baseline === undefined || !headerEquals(baseline, header)) {
       headerSeq = this.session.append('request/header', {
         header,
+        ...choice,
         reason: 'change',
         ...startsSeries ? { startsSeries: true } : {},
       }).seq
     } else if (startsSeries) {
-      this.session.append('request/header', { header, reason: 'series' })
+      this.session.append('request/header', { header, ...choice, reason: 'series' })
     }
     if (baseline !== undefined && headerSeq !== undefined) {
       const previousNames = new Set(baseline.tools?.map(tool => tool.name))

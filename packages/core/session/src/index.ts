@@ -263,6 +263,11 @@ function assertCurrentLlmShape(event: Record<string, unknown>, index: number): v
       throw new Error(`seed request/header at index ${index} has an invalid reasoningEffort`)
     }
     assertAdapterDefaults(headerRecord['adapterDefaults'], configRecord, index)
+    const selectedEffort = record?.['selectedReasoningEffort']
+    if (selectedEffort !== undefined && selectedEffort !== null
+      && (typeof selectedEffort !== 'string' || selectedEffort.length === 0)) {
+      throw new Error(`seed request/header at index ${index} has an invalid selectedReasoningEffort`)
+    }
     const reason = record?.['reason']
     if (reason !== 'initial' && reason !== 'resume' && reason !== 'change' && reason !== 'series') {
       throw new Error(`seed request/header at index ${index} has an invalid reason`)

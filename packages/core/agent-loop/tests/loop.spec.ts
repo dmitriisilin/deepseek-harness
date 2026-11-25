@@ -2006,6 +2006,38 @@ describe('parallel Supervisor integration', () => {
     expect(adapter.requests[0]?.maxTokens).toBeLessThanOrEqual(8192)
   })
 
+  it('runs an admitted continuation with normal tools and restores the selected effort', async () => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: 'SOURCES' } }] })))
+    const adapter = new MockAdapter([
+      toolCallResponse('internal', 'request_continuation', { reason: 'needs_sources' }),
+      toolCallResponse('public', 'lookup', {}),
+      textResponse('Verified'),
+    ], {
+      efforts: [{ id: ReasoningEffortId('low'), name: 'Low' }, { id: ReasoningEffortId('high'), name: 'High' }],
+      defaultEffort: ReasoningEffortId('high'),
+    })
+    const ctx = await harness(adapter)
+    const execute = vi.fn(async () => [{ type: 'text' as const, text: 'Source' }])
+    ctx.tools.register(defineContentToolFixture({ name: 'lookup', description: '', parameters: {}, execute }))
+    const agent = await ctx.agentLoop.create(SessionId('quick-continuation'), { provider: 'mock', model: 'claude-opus-5-5' })
+    const frames: AssistantStreamFrame[] = []
+    ctx.on('agent/assistant-stream', ({ frame }) => { frames.push(frame) })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Find the official source')
+    await idle
+    expect(adapter.requests.map(request => request.reasoningEffort)).toEqual(['low', 'high', 'high'])
+    expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toEqual(['request_continuation'])
+    expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toEqual(['lookup'])
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(frames)).not.toContain('request_continuation')
+    expect(agent.session.deriveMessages().flatMap(message => message.content).some(block =>
+      block.type === 'tool-call' && block.name === 'request_continuation')).toBe(false)
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
+  })
+
   it.each(['ACTION', 'DIRECT', 'error'])('gates an entire tool batch on %s', async (outcome) => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
