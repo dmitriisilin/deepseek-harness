@@ -13,7 +13,8 @@ const STANDALONE_ERROR = 'apps/web is not a standalone application: bare Vite ca
   + 'From a repository checkout, run `pnpm dsh web`; an installed package uses `dsh web`. '
   + 'For client-plugin HMR, run `pnpm run dev:web`, which starts `dsh web` and the rebuild watchers together.'
 const DEFAULT_CLIENT_TITLE = 'DSH Local Build'
-const AI_CONTROL_BUILD = process.env.DSH_WEB_BRAND === 'ai-control-red'
+const AI_CONTROL_CHANNEL = process.env.DSH_WEB_BRAND === 'ai-control-green' ? 'green'
+  : process.env.DSH_WEB_BRAND === 'ai-control-red' ? 'red' : undefined
 
 /** Escape build-time text before placing it in the HTML title element. */
 function escapeHtmlText(value: string): string {
@@ -22,7 +23,7 @@ function escapeHtmlText(value: string): string {
 
 /** Project the public build title into the initial HTML document. */
 function clientDocumentTitle(): Plugin {
-  const title = escapeHtmlText(process.env.DSH_CLIENT_TITLE ?? (AI_CONTROL_BUILD ? 'AI Control' : DEFAULT_CLIENT_TITLE))
+  const title = escapeHtmlText(process.env.DSH_CLIENT_TITLE ?? (AI_CONTROL_CHANNEL !== undefined ? 'AI Control' : DEFAULT_CLIENT_TITLE))
   return {
     name: 'dsh-client-document-title',
     transformIndexHtml(html) {
@@ -32,17 +33,23 @@ function clientDocumentTitle(): Plugin {
 }
 
 /** Brand the isolated PWA build while preserving the stock build and install identity. */
-function aiControlBrand(): Plugin {
+function aiControlBrand(channel: 'red' | 'green'): Plugin {
+  const iconPrefix = channel === 'green' ? 'icon-ai-control-v4' : 'icon-ai-control-v3'
+  const appleIcon = channel === 'green' ? 'apple-touch-icon-ai-control-v4.png' : 'apple-touch-icon-ai-control-v3.png'
+  const outlineSource = channel === 'green' ? 'ai-center-main.png' : 'ai-center-experimental.png'
+  // The outline preserves chromatic strokes and removes the neutral tile.
+  const outlineAlpha = channel === 'green' ? '-2 4 -2' : '4 -2 -2'
   return {
-    name: 'ai-control-red',
+    name: `ai-control-${channel}`,
     apply: 'build',
     transformIndexHtml(html) {
-      return html.replace('<html lang="en">', '<html lang="en" data-ai-control="red">')
+      // Keep the shared layout marker alongside the actual release channel.
+      return html.replace('<html lang="en">', `<html lang="en" data-ai-control="red" data-ai-control-channel="${channel}">`)
         .replace('content="DSH"', 'content="AI Control"')
-        .replaceAll('href="./favicon-dark.svg"', 'href="./icon-ai-control-v3-192.png"')
-        .replaceAll('href="./favicon.svg"', 'href="./icon-ai-control-v3-192.png"')
+        .replaceAll('href="./favicon-dark.svg"', `href="./${iconPrefix}-192.png"`)
+        .replaceAll('href="./favicon.svg"', `href="./${iconPrefix}-192.png"`)
         .replaceAll('type="image/svg+xml"', 'type="image/png"')
-        .replace('/apple-touch-icon.png', '/apple-touch-icon-ai-control-v3.png')
+        .replace('/apple-touch-icon.png', `/${appleIcon}`)
     },
     async writeBundle(options) {
       if (options.dir === undefined) throw new Error('AI Control requires an output directory')
@@ -50,14 +57,13 @@ function aiControlBrand(): Plugin {
       const manifest = JSON.parse(await readFile(src('./public/manifest.webmanifest'), 'utf8'))
       manifest.name = manifest.short_name = 'AI Control'
       for (const icon of manifest.icons) {
-        icon.src = icon.purpose === 'maskable' ? 'icon-ai-control-v3-maskable-512.png'
-          : `icon-ai-control-v3-${icon.sizes.split('x')[0]}.png`
+        icon.src = icon.purpose === 'maskable' ? `${iconPrefix}-maskable-512.png`
+          : `${iconPrefix}-${icon.sizes.split('x')[0]}.png`
       }
-      const icon = await readFile(src('./branding/ai-center-experimental.png'))
-      // The red strokes carry warm chroma. The graphite tile is neutral.
+      const icon = await readFile(src(`./branding/${outlineSource}`))
       const outline = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 644 644">
   <filter id="outline" color-interpolation-filters="sRGB">
-    <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  4 -2 -2 0 -0.2"/>
+    <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  ${outlineAlpha} 0 -0.2"/>
   </filter>
   <image width="644" height="644" filter="url(#outline)" href="data:image/png;base64,${icon.toString('base64')}"/>
 </svg>`
@@ -66,9 +72,9 @@ function aiControlBrand(): Plugin {
         writeFile(resolve(output, 'manifest.webmanifest'), JSON.stringify(manifest, null, 2) + '\n'),
         ...['icon-ai-control-192.png', 'icon-ai-control-512.png', 'icon-ai-control-maskable-512.png', 'apple-touch-icon.png']
           .map(async name => {
-            const outputName = name === 'apple-touch-icon.png' ? 'apple-touch-icon-ai-control-v3.png'
-              : name.replace(/^icon-ai-control-/, 'icon-ai-control-v3-')
-            await writeFile(resolve(output, outputName), await readFile(src(`./branding/red/${name}`)))
+            const outputName = name === 'apple-touch-icon.png' ? appleIcon
+              : name.replace(/^icon-ai-control-/, `${iconPrefix}-`)
+            await writeFile(resolve(output, outputName), await readFile(src(`./branding/${channel}/${name}`)))
           }),
       ])
     },
@@ -216,7 +222,8 @@ export default defineConfig({
   // directory, and the served index resolves identically from the site root.
   base: './',
   plugins: [
-    rejectStandaloneServe(), clientDocumentTitle(), ...(AI_CONTROL_BUILD ? [aiControlBrand()] : []), brandFontLicense(), katexWoff2Fonts(), react(), emitPreviewPage(),
+    rejectStandaloneServe(), clientDocumentTitle(), ...(AI_CONTROL_CHANNEL === undefined ? [] : [aiControlBrand(AI_CONTROL_CHANNEL)]),
+    brandFontLicense(), katexWoff2Fonts(), react(), emitPreviewPage(),
     productWebBundleIsolation(src('../..'), src('.')),
   ],
   build: {

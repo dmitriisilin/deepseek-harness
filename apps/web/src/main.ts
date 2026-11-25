@@ -21,6 +21,10 @@ if (document.documentElement.dataset.aiControl === 'red') {
     ['ai-control-staging-dima.di-storage.com', 'Dima’s AI Control'],
     ['127.0.0.1:33942', 'Kate’s AI Control'],
     ['127.0.0.1:33943', 'Dima’s AI Control'],
+    ['ai-control-kate.di-storage.com', 'Kate’s AI Control'],
+    ['ai-control-dima.di-storage.com', 'Dima’s AI Control'],
+    ['127.0.0.1:33944', 'Kate’s AI Control'],
+    ['127.0.0.1:33945', 'Dima’s AI Control'],
   ])
   const name = names.get(window.location.host)
   if (name !== undefined) {
