@@ -8,8 +8,8 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import type { CommandFileReceiptResolver } from '@deepseek-ai/dsh-commands'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { Remote, RemoteError, remoteErrorOf, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { handleFileUploadHttp } from './http-route.ts'
-import { FILE_UPLOAD_PATH } from './protocol.ts'
+import { handleFileUploadHttp, handleVoiceTiming } from './http-route.ts'
+import { FILE_UPLOAD_PATH, VOICE_TIMING_PATH } from './protocol.ts'
 import type {
   EncodedFileUploadRequest, FileUploadReceiptId, FileUploadValue, ImageUploadValue, StagedAttachment,
 } from './types.ts'
@@ -85,6 +85,14 @@ export class FileUploads extends TypertRemoteService {
       }),
       'file-upload: streaming route',
     )
+    if (process.env.AI_CONTROL_VOICE_TIMING === '1') {
+      ctx.effect(() => ctx.connection.fetch.register({
+        path: VOICE_TIMING_PATH,
+        methods: ['POST'],
+        requestBody: 'streaming',
+        fetch: handleVoiceTiming,
+      }), 'file-upload: voice timing route')
+    }
     ctx.on('session/event', (session, event) => { this.observeSessionEvent(session, event) })
     ctx.on('session/disposed', (session) => { this.stagedFiles.delete(session) })
   }

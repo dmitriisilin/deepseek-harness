@@ -3,6 +3,7 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import { VOICE_TIMING_FILE } from './protocol.ts'
 import type { FileUploads } from './index.ts'
 import type { FileUploadValue, ImageUploadValue } from './types.ts'
 
@@ -62,7 +63,8 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
         },
     }
   }
-  return new Response(JSON.stringify(result), {
+  return new Response(JSON.stringify({ ...result, ...(result.ok && name && VOICE_TIMING_FILE.test(name)
+    && process.env.AI_CONTROL_VOICE_TIMING === '1' ? { voiceTimingEnabled: true } : {}) }), {
     status: 200,
     headers: {
       'content-type': 'application/json; charset=utf-8',
@@ -83,4 +85,24 @@ async function* requestBodyChunks(body: ReadableStream<Uint8Array> | null): Asyn
   } finally {
     reader.releaseLock()
   }
+}
+
+/** Log bounded client measurements without storing audio or transcript. */
+export async function handleVoiceTiming(request: Request): Promise<Response> {
+  const size = Number(request.headers.get('content-length'))
+  if (!Number.isInteger(size) || size < 1 || size > 512) return new Response(null, { status: 400 })
+
+  let data: unknown
+  try { data = await request.json() } catch { return new Response(null, { status: 400 }) }
+  if (typeof data !== 'object' || data === null) return new Response(null, { status: 400 })
+  const recordingId = Reflect.get(data, 'recordingId')
+  const preparationMs = Reflect.get(data, 'preparationMs')
+  const uploadWaitMs = Reflect.get(data, 'uploadWaitMs')
+  const uploadMs = Reflect.get(data, 'uploadMs')
+  if (typeof recordingId !== 'string' || !VOICE_TIMING_FILE.test(recordingId)
+    || ![preparationMs, uploadWaitMs, uploadMs].every(value => Number.isInteger(value) && value >= 0 && value <= 3600000)) {
+    return new Response(null, { status: 400 })
+  }
+  console.info(JSON.stringify({ event: 'ai-control/voice-upload', recordingId, preparationMs, uploadWaitMs, uploadMs }))
+  return new Response(null, { status: 204 })
 }

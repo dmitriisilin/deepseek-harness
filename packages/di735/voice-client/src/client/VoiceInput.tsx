@@ -144,6 +144,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
   const finish = async (mode: 'dictate' | 'send' | 'recover' = 'dictate'): Promise<void> => {
     const active = current.current
     if (!active || active.phase !== 'recording') return
+    const stoppedAt = performance.now()
     active.phase = 'transcribing'
     const run = generation.current
     clearTimeout(active.timer); setPhase('transcribing')
@@ -157,6 +158,9 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
       }
       if (mode !== 'dictate' || (registerSubmitGate && addFiles)) {
         pendingFile.current = new File([audio], `${VOICE_FILENAME_PREFIX}${randomUUID()}.wav`, { type: 'audio/wav' })
+        performance.mark(`ai-control:voice:${pendingFile.current.name}`, {
+          detail: { stoppedAt, wavReadyAt: performance.now() },
+        })
       }
       if (mode === 'send') {
         addPendingFile()

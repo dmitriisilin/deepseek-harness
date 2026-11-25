@@ -80,3 +80,5 @@ No direct effect; ordinary submission owns the message content.
 None.
 
 </details>
+
+When the Host sets `AI_CONTROL_VOICE_TIMING=1`, voice attachments report elapsed browser time for recording finalization, the wait before upload, and upload acknowledgment. The authenticated report carries timings and the recording’s generated filename.

@@ -113,7 +113,11 @@ it.skipIf(webSnapshotMode() === 'record').each([
     await page.getByText('Recording kept. Press Send to attach it.', { exact: true }).waitFor()
     await expect.poll(() => page.locator('html').getAttribute('data-voice-test-wake-lock')).toBe('released')
   }
+  const voiceTiming = process.env.AI_CONTROL_VOICE_TIMING === '1'
+    ? page.waitForResponse(response => new URL(response.url()).pathname === '/api/session/voiceUploadTiming')
+    : undefined
   await send.click()
+  if (voiceTiming !== undefined) expect((await voiceTiming).status()).toBe(204)
   if (ambiguous) {
     const question = page.locator('[data-question-key]')
     await question.getByText('Ты спрашиваешь, чем они отличаются, или как их отключить?', { exact: true }).waitFor()

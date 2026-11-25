@@ -6,7 +6,7 @@ import { bytesToBase64 } from '@deepseek-ai/dsh-util-crypto'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { FILE_UPLOAD_ROUTE } from '../protocol.ts'
+import { FILE_UPLOAD_ROUTE, VOICE_TIMING_ROUTE } from '../protocol.ts'
 import type {
   ClientFileUploadHooks, EncodedFileUploadRequest, FileUploadFetch, FileUploadValue, ImageUploadValue,
 } from '../types.ts'
@@ -199,7 +199,28 @@ export class FileUploadRuntime extends Service implements FileUploadService {
     if (!(data instanceof Uint8Array)) {
       const query = new URLSearchParams({ sessionId })
       if (name !== undefined) query.set('name', name)
-      return parseUploadResult(await this.postRaw(query, data, signal, onProgress), fileUploadValue)
+      const markName = `ai-control:voice:${name ?? ''}`
+      const mark = performance.getEntriesByName(markName, 'mark').at(-1) as PerformanceMark | undefined
+      const uploadStartedAt = performance.now()
+      const body = await this.postRaw(query, data, signal, onProgress)
+      const acknowledgedAt = performance.now()
+      const result = parseUploadResult(body, fileUploadValue)
+      if (mark && result.ok && JSON.parse(body).voiceTimingEnabled === true) {
+        const { stoppedAt, wavReadyAt } = mark.detail
+        const timings = {
+          recordingId: name,
+          preparationMs: Math.round(wavReadyAt - stoppedAt),
+          uploadWaitMs: Math.round(uploadStartedAt - wavReadyAt),
+          uploadMs: Math.round(acknowledgedAt - uploadStartedAt),
+        }
+        performance.clearMarks(markName)
+        void this.post({
+          path: VOICE_TIMING_ROUTE,
+          body: new Blob([JSON.stringify(timings)]),
+          headers: { 'content-type': 'application/json' },
+        }).catch(() => undefined)
+      }
+      return result
     }
     return (this.ctx as FileUploadRemoteContext).remote.fileUploads.upload(
       sessionId,
