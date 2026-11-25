@@ -18,11 +18,12 @@ const packages = [
 ].map(({ dir, ...entry }) => ({ ...entry, dir: fileURLToPath(new URL(`../../../packages/${dir}`, import.meta.url)) }))
 
 it.skipIf(webSnapshotMode() === 'record').each([
-  { mixed: false, ambiguous: false, interrupted: false },
-  { mixed: false, ambiguous: false, interrupted: true },
-  { mixed: true, ambiguous: false, interrupted: false },
-  { mixed: false, ambiguous: true, interrupted: false },
-])('sends a recording through the Host ($mixed mixed, $ambiguous ambiguous, $interrupted interrupted)', async ({ mixed, ambiguous, interrupted }) => {
+  { mixed: false, ambiguous: false, interrupted: false, dictate: false },
+  { mixed: false, ambiguous: false, interrupted: true, dictate: false },
+  { mixed: true, ambiguous: false, interrupted: false, dictate: false },
+  { mixed: false, ambiguous: true, interrupted: false, dictate: false },
+  { mixed: false, ambiguous: false, interrupted: false, dictate: true },
+])('sends a recording through the Host ($mixed mixed, $ambiguous ambiguous, $interrupted interrupted, $dictate dictation)', async ({ mixed, ambiguous, interrupted, dictate }) => {
   const scratch = await mkdtemp(join(tmpdir(), 'dsh-send-voice-'))
   onTestFinished(async () => { await rm(scratch, { recursive: true, force: true }) })
   const overlay = join(scratch, 'speech.patch.yml')
@@ -113,6 +114,13 @@ it.skipIf(webSnapshotMode() === 'record').each([
     await page.getByText('Recording kept. Press Send to attach it.', { exact: true }).waitFor()
     await expect.poll(() => page.locator('html').getAttribute('data-voice-test-wake-lock')).toBe('released')
   }
+  if (dictate) {
+    await page.getByRole('button', { name: 'Stop and transcribe', exact: true }).click()
+    await expect.poll(() => page.locator('[data-composer-input]').innerText()).toContain('Recorded locally')
+    expect(recognize).toHaveBeenCalledOnce()
+    expect(committed).toHaveLength(0)
+    return
+  }
   const voiceTiming = process.env.AI_CONTROL_VOICE_TIMING === '1'
     ? page.waitForResponse(response => new URL(response.url()).pathname === '/api/session/voiceUploadTiming')
     : undefined
@@ -133,7 +141,7 @@ it.skipIf(webSnapshotMode() === 'record').each([
   expect(recognize).toHaveBeenCalledOnce()
   const transcript = ambiguous ? 'Чем отличаются DeepSeek Flash и DeepSeek Pro?' : 'Recorded locally'
   const expected = [
-    expect.objectContaining({ type: 'file', attachment: expect.objectContaining({ name: expect.stringMatching(/^ai-center-voice-.*\.wav$/u) }) }),
+    expect.objectContaining({ type: 'file', attachment: expect.objectContaining({ name: expect.stringMatching(process.env.AI_CONTROL_COMPRESSED_AUDIO === '1' ? /^ai-center-voice-.*\.webm$/u : /^ai-center-voice-.*\.wav$/u) }) }),
     { type: 'text', text: `[Voice message transcript]\n${transcript}` },
   ]
   if (mixed) expected.push(

@@ -42,6 +42,7 @@ export class Recording {
   private stream: MediaStream | undefined
   private recorder: MediaRecorder | undefined
   private stopped: Promise<void> | undefined
+  private compressedType: string | undefined
   private context: AudioContext | undefined
   private analyser: AnalyserNode | undefined
   private samples = new Float32Array(256)
@@ -88,12 +89,23 @@ export class Recording {
    * @param onError - receives failures during capture, before asynchronous resource release finishes.
    * @returns after capture starts; a cancelled permission grant immediately releases its tracks.
    */
-  async start(onError?: (error: RecordingError) => void): Promise<void> {
+  async start(onError?: (error: RecordingError) => void, compressed = false): Promise<void> {
     if (typeof MediaRecorder === 'undefined') throw new RecordingError('unavailable')
     await this.preview(onError)
     if (this.lifetime.signal.aborted) throw new RecordingError('cancelled')
     try {
-      this.recorder = new MediaRecorder(this.stream as MediaStream)
+      const mimeType = compressed && typeof MediaRecorder.isTypeSupported === 'function'
+        ? ['audio/webm;codecs=opus', 'audio/mp4;codecs=mp4a.40.2'].find(type => MediaRecorder.isTypeSupported(type))
+        : undefined
+      if (mimeType !== undefined) {
+        try {
+          this.recorder = new MediaRecorder(this.stream as MediaStream, { mimeType, audioBitsPerSecond: 96000 })
+          this.compressedType = mimeType.split(';', 1)[0]
+        } catch {
+          // Some devices reject the requested encoder despite reporting support.
+        }
+      }
+      this.recorder ??= new MediaRecorder(this.stream as MediaStream)
       this.recorder.ondataavailable = (event) => { if (!this.lifetime.signal.aborted && event.data.size > 0) this.chunks.push(event.data) }
       const stopped = Promise.withResolvers<void>()
       this.stopped = stopped.promise
@@ -140,7 +152,9 @@ export class Recording {
    * @param maxDurationSeconds - truncate timer overshoot to the Host limit.
    * @returns one recording after the final MediaRecorder chunk arrives.
    */
-  async stop(maxDurationSeconds: number): Promise<Uint8Array<ArrayBuffer>> {
+  async stop(maxDurationSeconds: number, compressed?: false): Promise<Uint8Array<ArrayBuffer>>
+  async stop(maxDurationSeconds: number, compressed: boolean): Promise<Uint8Array<ArrayBuffer> | Blob>
+  async stop(maxDurationSeconds: number, compressed = false): Promise<Uint8Array<ArrayBuffer> | Blob> {
     const recorder = this.recorder
     const context = this.context
     if (!recorder || !context || !this.stopped) { await this.dispose(); throw new RecordingError('empty') }
@@ -151,6 +165,9 @@ export class Recording {
       this.lifetime.signal.throwIfAborted()
       const blob = new Blob(this.chunks, { type: recorder.mimeType })
       if (blob.size === 0) throw new RecordingError('empty')
+      if (compressed && this.compressedType && (!blob.type || blob.type.split(';', 1)[0] === this.compressedType)) {
+        return new Blob(this.chunks, { type: this.compressedType })
+      }
       const decoded = await context.decodeAudioData(await blob.arrayBuffer())
       this.lifetime.signal.throwIfAborted()
       const offline = new OfflineAudioContext(1, Math.max(1, Math.floor(Math.min(decoded.duration, maxDurationSeconds) * 16000)), 16000)

@@ -54,6 +54,7 @@ interface ActiveRecording {
   readonly selection: SpeechSelection
   readonly maxDurationSeconds: number
   readonly maxAudioBytes: number
+  readonly compressedAudio: boolean
   phase: 'requesting' | 'recording' | 'transcribing'
   timer?: ReturnType<typeof setTimeout> | undefined
 }
@@ -149,15 +150,16 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
     const run = generation.current
     clearTimeout(active.timer); setPhase('transcribing')
     try {
-      const audio = await active.capture.stop(active.maxDurationSeconds)
+      const audio = await active.capture.stop(active.maxDurationSeconds, active.compressedAudio)
+      const format = audio instanceof Blob ? (audio.type.startsWith('audio/webm') ? 'webm' : 'mp4') : undefined
       if (run !== generation.current) throw new DOMException('Recording cancelled', 'AbortError')
-      if (audio.byteLength > active.maxAudioBytes) {
+      if ((audio instanceof Blob ? audio.size : audio.byteLength) > active.maxAudioBytes) {
         if (mode === 'send') throw new Error(t('tooLarge'))
         feedback(t('tooLarge'))
         return
       }
       if (mode !== 'dictate' || (registerSubmitGate && addFiles)) {
-        pendingFile.current = new File([audio], `${VOICE_FILENAME_PREFIX}${randomUUID()}.wav`, { type: 'audio/wav' })
+        pendingFile.current = new File([audio], `${VOICE_FILENAME_PREFIX}${randomUUID()}.${format ?? 'wav'}`, { type: audio instanceof Blob ? audio.type : 'audio/wav' })
         performance.mark(`ai-control:voice:${pendingFile.current.name}`, {
           detail: { stoppedAt, wavReadyAt: performance.now() },
         })
@@ -170,7 +172,10 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
         feedback(t('recordingRecovered'))
         return
       }
-      const result = await transcribe({ audioBase64: audioBase64(audio), ...active.selection }, active.abort.signal)
+      const bytes = audio instanceof Blob ? new Uint8Array(await audio.arrayBuffer()) : audio
+      const result = await transcribe({
+        audioBase64: audioBase64(bytes), ...active.selection, ...(format === undefined ? {} : { format }),
+      }, active.abort.signal)
       if (run !== generation.current) return
       if (!result.ok) {
         feedback(pendingFile.current ? t('recordingRecovered') : t('failed', { message: result.error.message }))
@@ -206,7 +211,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
     const run = ++generation.current
     const active: ActiveRecording = { capture: createRecording(), abort: new AbortController(),
       span: inputActions.captureInsertion(), selection: catalog.selection,
-      maxDurationSeconds: catalog.maxDurationSeconds, maxAudioBytes: catalog.maxAudioBytes, phase: 'requesting' }
+      maxDurationSeconds: catalog.maxDurationSeconds, maxAudioBytes: catalog.maxAudioBytes, compressedAudio: catalog.compressedAudio === true, phase: 'requesting' }
     current.current = active
     setMessage(''); setPending(''); setPhase('requesting')
     try {
@@ -220,7 +225,7 @@ export function VoiceInput({ sessionId, inputActions, locked, onActiveChange, on
         clearTimeout(active.timer); active.abort.abort()
         void disposeRecording(active.capture)
         feedback(failureText(failure, t))
-      })
+      }, active.compressedAudio)
       if (run !== generation.current || current.current !== active) return
       active.phase = 'recording'
       setPhase('recording')

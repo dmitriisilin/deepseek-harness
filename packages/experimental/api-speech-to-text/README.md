@@ -78,3 +78,5 @@ No direct effect; ordinary submission owns the message content.
 None.
 
 </details>
+
+On a Node Host with FFmpeg, `AI_CONTROL_COMPRESSED_AUDIO=1` also accepts browser WebM/Opus and MP4/AAC for dictation. The Host decodes the recording to canonical WAV before invoking the selected recognizer.

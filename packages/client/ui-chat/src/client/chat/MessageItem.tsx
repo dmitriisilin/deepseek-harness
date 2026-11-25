@@ -39,7 +39,7 @@ function contentParts(content: readonly unknown[]): {
   const voiceTranscript = typeof document !== 'undefined'
     && document.documentElement.dataset.aiControl === 'red'
     && attachments.some(attachment => attachment.type === 'file'
-      && /^ai-center-voice-[0-9a-f-]{36}\.wav$/u.test(attachment.file.name))
+      && /^ai-center-voice-[0-9a-f-]{36}\.(?:wav|webm|mp4)$/u.test(attachment.file.name))
   const text = voiceTranscript
     ? texts.map(part => part.replace(/^\[Voice message transcript\]\r?\n/u, '')).join('')
     : texts.join('')

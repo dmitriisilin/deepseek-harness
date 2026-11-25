@@ -82,3 +82,5 @@ None.
 </details>
 
 When the Host sets `AI_CONTROL_VOICE_TIMING=1`, voice attachments report elapsed browser time for recording finalization, the wait before upload, and upload acknowledgment. The authenticated report carries timings and the recording’s generated filename.
+
+With `AI_CONTROL_COMPRESSED_AUDIO=1`, the composer requests WebM/Opus or MP4/AAC at 96 kbit/s, falling back to canonical WAV when the browser cannot record either format. FFmpeg on the Host decodes compressed attachments before recognition.

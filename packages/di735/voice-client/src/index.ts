@@ -5,12 +5,12 @@ import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-experimental-speech-to-text'
 import type { SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
-import { validateWave } from '@deepseek-ai/dsh-experimental-speech-to-text/wave'
+import { decodeRecordedAudio, validateWave } from '@deepseek-ai/dsh-experimental-speech-to-text/wave'
 import { VOICE_FILENAME_PREFIX } from './voice-file.ts'
 
 export const inject = ['attachments', 'speechToText', 'userQuestions']
 
-const voiceFilename = new RegExp(`^${VOICE_FILENAME_PREFIX}[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\\.wav$`, 'u')
+const voiceFilename = new RegExp(`^${VOICE_FILENAME_PREFIX}[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\\.(wav|webm|mp4)$`, 'u')
 const maxSeconds = 120
 const maxBytes = 44 + maxSeconds * 32000
 
@@ -58,8 +58,10 @@ export function apply(ctx: Context): void {
       const content = []
       for (const block of message.content) {
         content.push(block)
-        if (block.type !== 'file' || !voiceFilename.test(block.attachment.name)) continue
+        if (block.type !== 'file') continue
         const ref = block.attachment
+        const format = voiceFilename.exec(ref.name)?.[1]
+        if (!format) continue
         let transcript: string | undefined
         const started = performance.now()
         let inferenceMs: number | undefined
@@ -72,8 +74,10 @@ export function apply(ctx: Context): void {
             offset += chunk.byteLength
           }
           if (offset !== audio.length) throw new Error('Voice recording is incomplete')
-          validateWave(audio, maxSeconds)
-          const spec = ctx.speechToText.resolve({ audio, providerId: 'whisper-local' as SpeechProviderId })
+          const wav = format === 'webm' || format === 'mp4'
+            ? await decodeRecordedAudio(audio, format, maxSeconds, signal) : audio
+          validateWave(wav, maxSeconds)
+          const spec = ctx.speechToText.resolve({ audio: wav, providerId: 'whisper-local' as SpeechProviderId })
           if (spec.provider.info.location !== 'host-local') throw new Error('Voice provider must be local')
           const result = await ctx.speechToText.transcribe(spec, signal)
           inferenceMs = Math.round(result.inferenceSeconds * 1000)
@@ -86,7 +90,7 @@ export function apply(ctx: Context): void {
         if (typeof process !== 'undefined' && (Reflect.get(process.env, 'AI_CONTROL_SUPERVISOR') === '1'
           || Reflect.get(process.env, 'AI_CONTROL_TURN_LOG') === '1')) {
           console.info(JSON.stringify({
-            event: 'ai-control/stt', sessionId: agent.session.id, turn,
+            event: 'ai-control/stt', sessionId: agent.session.id, turn, format,
             durationMs: Math.round(recognized - started), inferenceMs,
             clarificationMs: Math.round(performance.now() - recognized),
             status: transcript === undefined ? 'failed' : transcript === '' ? 'empty'

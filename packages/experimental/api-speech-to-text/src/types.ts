@@ -14,12 +14,14 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 /** Complete recording submitted for transcription, separate from Session admission. */
 export interface TranscriptionRequest {
   readonly audioBase64: string
+  readonly format?: 'webm' | 'mp4'
   readonly providerId?: SpeechProviderId
   readonly language?: string
 }
 
 /** Current provider choices and audio intake limits. */
 export interface SpeechCatalog extends SpeechSnapshot {
+  readonly compressedAudio?: boolean
   readonly maxAudioBytes: number
   readonly maxDurationSeconds: number
 }

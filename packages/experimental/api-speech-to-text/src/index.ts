@@ -5,7 +5,7 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import type {} from '@deepseek-ai/dsh-experimental-speech-to-text'
 import type { SpeechPreparationOptions, SpeechProviderId, SpeechSelectionPatch, Transcript } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { SpeechCatalog, TranscriptionRequest } from './types.ts'
-import { validateWave } from '@deepseek-ai/dsh-experimental-speech-to-text/wave'
+import { decodeRecordedAudio, validateWave } from '@deepseek-ai/dsh-experimental-speech-to-text/wave'
 
 export type * from './types.ts'
 
@@ -32,6 +32,8 @@ export default class SpeechController extends TypertRemoteService {
     maxDurationSeconds: z.number().min(1).default(120),
   })
 
+  private readonly compressedAudio = typeof process !== 'undefined' && process.env.AI_CONTROL_COMPRESSED_AUDIO === '1'
+
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'speechController', { namespace: 'speech' })
   }
@@ -42,7 +44,7 @@ export default class SpeechController extends TypertRemoteService {
    */
   @Remote
   catalog(): SpeechCatalog {
-    return { ...this.ctx.speechToText.snapshot(), ...this.config }
+    return { ...this.ctx.speechToText.snapshot(), ...this.config, compressedAudio: this.compressedAudio }
   }
 
   /**
@@ -52,7 +54,9 @@ export default class SpeechController extends TypertRemoteService {
    */
   @Remote({ mode: 'stream' })
   async *follow(signal: AbortSignal): AsyncIterable<SpeechCatalog> {
-    for await (const snapshot of this.ctx.speechToText.follow(signal)) yield { ...snapshot, ...this.config }
+    for await (const snapshot of this.ctx.speechToText.follow(signal)) {
+      yield { ...snapshot, ...this.config, compressedAudio: this.compressedAudio }
+    }
   }
 
   /**
@@ -92,10 +96,17 @@ export default class SpeechController extends TypertRemoteService {
     if (encoded.length > Math.ceil(this.config.maxAudioBytes / 3) * 4) {
       throw new RemoteError('speech/invalid-audio', 'Audio is invalid or exceeds the configured byte limit', { reason: 'encoding-or-size' })
     }
-    const audio = Buffer.from(encoded, 'base64')
+    let audio: Uint8Array = Buffer.from(encoded, 'base64')
     try {
-      if (audio.toString('base64') !== encoded) throw new Error('Audio must use canonical base64 encoding')
+      if (Buffer.from(audio).toString('base64') !== encoded) throw new Error('Audio must use canonical base64 encoding')
       if (audio.length > this.config.maxAudioBytes) throw new Error('Audio exceeds the configured byte limit')
+      if (request.format !== undefined) {
+        if (!this.compressedAudio || (request.format !== 'webm' && request.format !== 'mp4')) {
+          throw new Error('Unsupported recording format')
+        }
+        audio = await decodeRecordedAudio(audio, request.format, this.config.maxDurationSeconds, signal)
+      }
+      if (audio.length > this.config.maxAudioBytes) throw new Error('Decoded audio exceeds the configured byte limit')
       validateWave(audio, this.config.maxDurationSeconds)
       const spec = this.ctx.speechToText.resolve({ audio,
         ...request.providerId === undefined ? {} : { providerId: request.providerId },
