@@ -69,6 +69,15 @@ it.skipIf(webSnapshotMode() === 'record').each([
   const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] })
   onTestFinished(async () => { await browser.close() })
   const page = await newEnglishPage(browser)
+  if (checkStatus) await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgent', { value: `${navigator.userAgent} Android` })
+    document.addEventListener('focusin', (event) => {
+      if (event.target instanceof Element && event.target.closest('[data-composer-input]')) {
+        const root = document.documentElement
+        root.dataset.composerFocusCount = String(Number(root.dataset.composerFocusCount ?? 0) + 1)
+      }
+    })
+  })
   if (interrupted) await page.addInitScript(() => {
     const start = MediaRecorder.prototype.start
     MediaRecorder.prototype.start = function (timeslice) {
@@ -147,6 +156,7 @@ it.skipIf(webSnapshotMode() === 'record').each([
     if (new URL(route.request().url()).searchParams.has('voiceChunks')) await finalization.promise
     await route.continue()
   })
+  const focusBeforeSend = await page.locator('html').getAttribute('data-composer-focus-count')
   try {
     await send.click()
     if (checkSending) {
@@ -170,7 +180,7 @@ it.skipIf(webSnapshotMode() === 'record').each([
       await expect.poll(() => recognize.mock.calls.length).toBe(1)
       const status = page.locator('[data-transcribing-voice]')
       await status.getByRole('status').getByText('Transcribing voice').waitFor()
-      await status.getByRole('progressbar').waitFor()
+      expect(await status.getByRole('progressbar').count()).toBe(0)
       await expect.poll(() => status.locator('[data-running-time]').innerText()).toMatch(/[1-9]/u)
       if (process.env.AI_CONTROL_SCREENSHOTS) {
         await page.screenshot({ path: join(process.env.AI_CONTROL_SCREENSHOTS, 'voice-transcribing-412-light.png') })
@@ -210,5 +220,6 @@ it.skipIf(webSnapshotMode() === 'record').each([
     expect(await page.getByText(/^ai-center-voice-/u).count()).toBe(0)
     expect(await page.locator('[data-voice-sending]').count()).toBe(0)
     expect(await page.locator('[data-transcribing-voice]').count()).toBe(0)
+    if (checkStatus) expect(await page.locator('html').getAttribute('data-composer-focus-count')).toBe(focusBeforeSend)
   }
 })

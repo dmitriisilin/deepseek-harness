@@ -19,7 +19,3 @@
     height: 28px;
   }
 }
-
-html[data-ai-control='red'] [data-chat-flow]:has([data-turn-process-running]) [data-chat-running] {
-  display: none;
-}

@@ -33,17 +33,10 @@ export const ChatFlow = memo(function ChatFlow({
   const nodeStore = useChat(snapshot => snapshot.nodes)
   const running = useSession(snapshot => snapshot.running)
   const disconnected = useConnectionState(state => state === 'disconnected' || state === 'connecting')
-  const latestTurnAnchor = useChat(snapshot => snapshot.navigation.items().at(-1)?.anchorKey)
-  const runningStartTime = useChatNode(latestTurnAnchor ?? '', (node) => {
-    const location = node?.location
-    return location?.kind === 'turn' || location?.kind === 'step'
-      ? location.turn.status === 'open' ? location.turn.start?.time : undefined
-      : undefined
-  })
-  const latestTurnOpen = useChatNode(latestTurnAnchor ?? '', (node) => {
-    const location = node?.location
-    return (location?.kind === 'turn' || location?.kind === 'step') && location.turn.status === 'open'
-  })
+  const latestTurn = useChat(snapshot => snapshot.timeline.turns.get(snapshot.timeline.turnOrder.at(-1) ?? 0))
+  const latestTurnOpen = latestTurn?.status === 'open'
+  const runningStartTime = latestTurnOpen ? latestTurn.start?.time : undefined
+  const latestStep = latestTurnOpen ? latestTurn.steps.at(-1) : undefined
   const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
   // The local echo is retired when its admitted user message with the transcript appears.
   const voice = aiControl ? pendingInputs.find((item): item is PendingSubmission => isLocalSubmission(item)
@@ -100,7 +93,8 @@ export const ChatFlow = memo(function ChatFlow({
   return [
     ...rows, ...leadingRows, ...openingRows,
     ...running || holding || voice !== undefined ? [<RunningStatus key="running" startTime={voice?.time ?? runningStartTime}
-      paused={disconnected} holding={holding} compact={aiControl} transcribing={voice !== undefined} t={t} />] : [],
+      paused={disconnected} holding={holding} compact={aiControl} transcribing={voice !== undefined}
+      step={latestStep?.step} stepStartedAt={latestStep?.start?.time} stepEndedAt={latestStep?.end?.time} t={t} />] : [],
     ...pendingRows,
   ]
 })

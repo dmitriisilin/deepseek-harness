@@ -237,7 +237,7 @@ it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('opens without a Worksp
   if (output) await page.screenshot({ path: join(output, 'ai-control-mobile-project-360-ru.png'), animations: 'disabled' })
 })
 
-it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('keeps live work in a single expandable row', async () => {
+it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('keeps the mobile step clock visible with expandable work details', async () => {
   const scaffold = await launchWebScaffold({ replayFixture: fixture, paceMs: 300 })
   onTestFinished(() => scaffold.close())
   const browser = await chromium.launch()
@@ -255,8 +255,10 @@ it.runIf(process.env.DSH_WEB_BRAND === 'ai-control-red')('keeps live work in a s
   await progress.waitFor()
   expect(await progress.count()).toBe(1)
   await expect.poll(() => progress.getAttribute('aria-expanded')).toBe('false')
-  expect(await page.locator('[data-chat-running]').isVisible()).toBe(false)
-  const bounds = (await progress.boundingBox())!
+  const clock = page.locator('[data-chat-running]')
+  await clock.locator('[data-running-step]').waitFor()
+  expect(await clock.getByRole('progressbar').count()).toBe(0)
+  const bounds = (await clock.boundingBox())!
   expect(bounds.x).toBeGreaterThan(0)
   expect(bounds.x + bounds.width).toBeLessThan(360)
   if (output) await page.screenshot({ path: join(output, 'progress-360-light.png'), animations: 'disabled' })

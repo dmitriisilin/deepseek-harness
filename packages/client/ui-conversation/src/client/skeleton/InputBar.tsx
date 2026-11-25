@@ -165,8 +165,9 @@ export const InputBar = memo(function InputBar({
   const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting' || input?.phase === 'sending'
   // The message waits for the Host to accept it; Send shows progress instead of the arrow.
   const sending = input?.phase === 'sending'
-  const voiceSending = aiControl && attachments.some((attachment) => {
-    if (attachment.kind !== 'file' || !isVoiceRecordingName(attachment.file.name)) return false
+  const voiceAttachments = aiControl ? attachments.filter(attachment =>
+    attachment.kind === 'file' && isVoiceRecordingName(attachment.file.name)) : []
+  const voiceSending = voiceAttachments.some((attachment) => {
     const status = uploads[attachment.id]?.status
     return status !== 'error' && (machineBusy || status !== 'ready')
   })
@@ -406,6 +407,12 @@ export const InputBar = memo(function InputBar({
         : running && steeringAvailable && !disabled && !uploadsPending && plainMessageDraft
           ? t(primarySubmitMode === 'steer' ? 'input.send.steer' : 'input.send.queue')
           : t('input.send')
+  const mobileVoiceSubmit = (): boolean => aiControl && isMobileDevice()
+    && !primaryStops && !primaryRetries && (activitySubmitReady || voiceAttachments.length > 0)
+  const onPrimaryMouseDown = (event: MouseEvent<HTMLButtonElement>): void => {
+    if (mobileVoiceSubmit()) event.preventDefault()
+    else keepFocus(event)
+  }
   const onPrimary = (): void => {
     if (primaryStops) {
       stopAction?.()
@@ -417,7 +424,10 @@ export const InputBar = memo(function InputBar({
     }
     if (keyboard === undefined) return // absent machine: the button is disabled
     /* v8 ignore next -- defensive: the primary button is disabled for empty, disabled, and pending-upload states. */
-    if (!empty && !disabled && !machineBusy && !uploadsPending) keyboard.submit(primarySubmitMode, 'click')
+    if (!empty && !disabled && !machineBusy && !uploadsPending) {
+      if (mobileVoiceSubmit()) editor?.getRootElement()?.blur()
+      keyboard.submit(primarySubmitMode, 'click')
+    }
   }
 
   // Claim ghost hint: rendered by CSS as generated content after the last
@@ -611,7 +621,7 @@ export const InputBar = memo(function InputBar({
                   aria-busy={sending}
                   data-sending={sending ? '' : undefined}
                   disabled={primaryDisabled}
-                  onMouseDown={keepFocus}
+                  onMouseDown={onPrimaryMouseDown}
                   onClick={onPrimary}
                 >
                   {primaryStops ? (

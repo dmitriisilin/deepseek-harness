@@ -15,6 +15,9 @@ interface RunningStatusProps {
   readonly holding?: boolean
   readonly compact?: boolean
   readonly transcribing?: boolean
+  readonly step?: number | undefined
+  readonly stepStartedAt?: number | undefined
+  readonly stepEndedAt?: number | undefined
   readonly t: ChatViewSlotProps['t']
 }
 
@@ -25,7 +28,7 @@ interface RunningStatusProps {
  * Turn's actions row replaces it.
  */
 export const RunningStatus = memo(function RunningStatus({
-  startTime, paused, holding = false, compact = false, transcribing = false, t,
+  startTime, paused, holding = false, compact = false, transcribing = false, step, stepStartedAt, stepEndedAt, t,
 }: RunningStatusProps) {
   const [now, setNow] = useState(Date.now)
   const [mountedAt] = useState(Date.now)
@@ -35,23 +38,26 @@ export const RunningStatus = memo(function RunningStatus({
     const timer = setInterval(() => { setNow(Date.now()) }, LIVE_RUN_CLOCK_INTERVAL_MS)
     return () => { clearInterval(timer) }
   }, [startTime, paused, holding, compact])
-  // Compact AI Control lane: one chat-typography line left of the user bubble
-  // (the status slot mirrors the right-aligned rows), shimmering while the
-  // stage runs and carrying elapsed seconds from its own start.
-  const stage = transcribing ? t('chat.transcribingVoice') : t('chat.preparingAnswer')
-  const duration = formatRunDuration(Math.max(0, now - (startTime ?? mountedAt)), t)
-    .map(part => part.text).join('')
   if (compact) {
+    const stage = transcribing ? t('chat.transcribingVoice')
+      : step === undefined ? t('chat.preparingAnswer') : t('chat.runningStep', { step })
+    const duration = formatRunDuration(Math.max(now, stepEndedAt ?? 0) - (startTime ?? mountedAt), t).map(part => part.text).join('')
+    const stepDuration = transcribing || stepStartedAt === undefined ? undefined
+      : formatRunDuration((stepEndedAt ?? now) - stepStartedAt, t).map(part => part.text).join('')
     return (
       <div className={`${css.running} ${css.compactRunning}`} data-chat-running
         data-holding={holding ? '' : undefined} data-transcribing-voice={transcribing || undefined} aria-hidden={holding || undefined}>
         <span className={a11yCss.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">
-          {t('chat.runningWithTime', { stage, duration })}
+          {stage}
         </span>
         {holding ? null : <>
-          <TextShimmer active className={css.runningStage} title={stage}>{stage}</TextShimmer>
-          <span className={css.runningTime} data-running-time>{duration}</span>
-          <progress className={css.runningProgress} aria-label={stage} />
+          <span data-running-step={transcribing ? undefined : step}>{stage}</span>
+          <span className={css.runningTime} data-running-time>
+            {' · '}{stepDuration ?? duration}
+          </span>
+          {stepDuration !== undefined && <span className={css.runningTime}>
+            {' · '}{t('chat.runningTotal', { duration })}
+          </span>}
         </>}
       </div>
     )
