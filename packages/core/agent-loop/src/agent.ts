@@ -70,7 +70,13 @@ interface TurnDiagnostics {
   started: number
   workerMs?: number
   continuation?: string
-  supervisor?: { calls: Omit<SupervisorBudget['calls'][number], 'started'>[]; extensions: number; reason?: string | undefined }
+  supervisor?: {
+    calls: Omit<SupervisorBudget['calls'][number], 'started'>[]
+    extensions: number
+    successfulTools: number
+    failedTools: number
+    reason?: string | undefined
+  }
   firstTextMs?: number
   effort?: string
   preparationMs?: number
@@ -109,8 +115,17 @@ const quickPrompt = [
   'call request_continuation with the appropriate reason instead of giving a preliminary answer.',
   'Inspect the project when the facts are absent from the available context. Answer from deployment context when it suffices.',
   'For project files or configuration use needs_action. For public documentation use needs_sources.',
+  'For product comparisons that vary by version, market, or year, use needs_sources when evidence is missing.',
   'Invoke the declared function through the tool interface. Never print tool syntax in your answer.',
 ].join(' ')
+
+function finalDeadlineError(cause: unknown): LlmError {
+  return new LlmError(
+    'The model ran out of time to finish the answer. Any partial answer is kept. Retry the question to continue.',
+    'TIMEOUT',
+    { cause },
+  )
+}
 
 /** Remove adapter-derived values before plugins propose the next request config. */
 function requestProposal(header: EpochHeader): LlmCallConfig {
@@ -327,7 +342,7 @@ export class ReactLoopAgent implements Agent {
   private async preStep(
     target: InboxTarget,
     position: { turn: number; step: number },
-    final = false,
+    supervisor?: SupervisorBudget,
   ): Promise<PreparedStep> {
     /* v8 ignore next -- private callers establish the running phase before proposing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
@@ -357,9 +372,18 @@ export class ReactLoopAgent implements Agent {
         toolSet.dispose()
         return decision
       }
-      if (final) {
-        const restricted: ResolvedToolSet = { dispose: () => toolSet.dispose(), view: () => new Map() }
-        return { ...decision, assembly: { ...assembly, tools: [] }, selection, toolSet: restricted, startsRequestSeries: true }
+      const final = supervisor?.final === true
+      if (final || supervisor?.continuation === 'needs_sources') {
+        const admitted = (name: string) => !final && (name === 'web_search' || name === 'web_fetch')
+        const restricted: ResolvedToolSet = {
+          dispose: () => toolSet.dispose(),
+          view: scope => new Map([...toolSet.view(scope)].filter(([name]) => admitted(name))),
+        }
+        const tools = assembly.tools.filter(tool => admitted(tool.name))
+        return {
+          ...decision, assembly: { ...assembly, tools }, selection, toolSet: restricted,
+          ...final ? { startsRequestSeries: true } : {},
+        }
       }
       return { ...decision, assembly, selection, toolSet }
     } catch (error: unknown) {
@@ -408,7 +432,7 @@ export class ReactLoopAgent implements Agent {
             durationMs: supervisor.elapsed(),
           }, progress)
         }
-        const decision = await this.preStep(target, { turn, step }, supervisor?.final)
+        const decision = await this.preStep(target, { turn, step }, supervisor)
         if (decision.kind === 'reject') {
           turnEnds = { kind: 'blocked' }
           return false
@@ -495,12 +519,14 @@ export class ReactLoopAgent implements Agent {
         if (supervisor) diagnostics.supervisor = {
           calls: supervisor.calls.map(({ started: _started, ...call }) => call),
           extensions: supervisor.extensions,
+          successfulTools: supervisor.successfulTools,
+          failedTools: supervisor.failedTools,
           reason: supervisor.reason ?? turnEnds?.kind,
         }
         const { started, ...metrics } = diagnostics
         console.info(JSON.stringify({
           event: 'ai-control/turn', sessionId: this.session.id, turn, status: turnEnds?.kind,
-          policyVersion: supervisor ? 4 : 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
+          policyVersion: supervisor ? 5 : 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
         }))
       }
       try {
@@ -533,7 +559,7 @@ export class ReactLoopAgent implements Agent {
     const final = supervisor?.final === true
     const quick = supervisor !== undefined && step === 1
       && ['deepseek-flash', 'claude-opus-5-5'].includes(decision.selection.model)
-    const light = quick || (final && supervisor.reason === 'general_question')
+    const light = quick || final
     const deploymentContext = supervisor ? process.env.AI_CONTROL_DEPLOYMENT_CONTEXT?.trim().slice(0, 2000) : undefined
     const renderedPrompt = [
       renderPrompt(assembly),
@@ -544,9 +570,18 @@ export class ReactLoopAgent implements Agent {
     let firstAttempt = true
     while (true) {
       const requestSignal = supervisor?.workSignal(signal, quick ? 12000 : undefined) ?? signal
-      const { config, preparedCall } = await this.prepareRequest(
+      const prepared = await this.prepareRequest(
         turn, step, decision.selection, requestSignal, supervisor ? WORKER_OUTPUT_LIMIT : undefined, light,
-      )
+      ).catch((error: unknown) => {
+        if (supervisor && requestSignal.aborted && !signal.aborted) {
+          if (final) throw finalDeadlineError(error)
+          supervisor.finish('worker_deadline')
+          return undefined
+        }
+        throw error
+      })
+      if (prepared === undefined) return null
+      const { config, preparedCall } = prepared
       const currentContext = this.loopCtx.systemPrompt.refreshContext(assembly, {
         ...assembleContextFor(this, signal), modelSelection: decision.selection,
       })
@@ -582,7 +617,7 @@ export class ReactLoopAgent implements Agent {
           'This is the final response. No tools are available. Never print commands as tool calls or invent inspection results.',
           supervisor?.reason === 'clarify' || supervisor?.reason === 'ambiguous_input'
             ? 'Ask one concise question if the available information is insufficient.'
-            : 'Answer using the evidence available. If project-specific information is missing, say what you need to verify.',
+            : 'Give the useful answer first, then brief supporting evidence. State what is missing or unverified.',
         ].join(' ')
         this.session.append('user/message', createUserMessage({
           source: { kind: 'runtime-context', form: 'instructions' }, content: [{ type: 'text', text: instruction }],
@@ -626,9 +661,15 @@ export class ReactLoopAgent implements Agent {
         }
         requestSignal.throwIfAborted()
       } catch (error: unknown) {
-        if (!started) throw error
+        const deadline = supervisor !== undefined && requestSignal.aborted && !signal.aborted
+        if (!started) {
+          if (!deadline) throw error
+          if (final) throw finalDeadlineError(error)
+          supervisor.finish('worker_deadline')
+          return null
+        }
         try {
-          if (signal.aborted) {
+          if (signal.aborted || (final && deadline)) {
             const content = live.interruptedBlocks()
             if (content.length > 0) {
               live.settle('assistant/message', () => this.session.append('assistant/message', {
@@ -665,7 +706,8 @@ export class ReactLoopAgent implements Agent {
             { cause: error },
           )
         }
-        if (supervisor && !final && requestSignal.aborted && !signal.aborted) {
+        if (deadline) {
+          if (final) throw finalDeadlineError(error)
           supervisor.finish('worker_deadline')
           return null
         }
@@ -766,7 +808,12 @@ export class ReactLoopAgent implements Agent {
           for (const context of result.additionalContexts) {
             this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context])
           }
-          if (supervisor && toolSignal.aborted && !signal.aborted) supervisor.finish('tool_deadline')
+          if (supervisor) {
+            const failed = result.results.filter(item => item.result.isError).length
+            supervisor.noteTools(result.results.length - failed, failed)
+            setProgress(`${progress} Tool outcomes: ${result.results.length - failed} succeeded, ${failed} failed.`)
+            if (toolSignal.aborted && !signal.aborted) supervisor.finish('tool_deadline')
+          }
           return result.concluded ? { kind: 'completed' } : null
         } catch (error: unknown) {
           if (supervisor && toolSignal.aborted && !signal.aborted) supervisor.finish('tool_deadline')

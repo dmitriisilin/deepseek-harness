@@ -58,6 +58,53 @@ describe('per-turn Supervisor budget', () => {
     budget.close()
   })
 
+  it.each([
+    ['DEEP', 'needs_sources'],
+    ['DIRECT', 'needs_sources'],
+    ['DEEP', 'needs_action'],
+    ['DIRECT', 'needs_reasoning'],
+  ] as const)('admits %s with Worker continuation %s', async (classification, continuation) => {
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(classification)
+    })
+    budget.start([user], undefined)
+    try {
+      await expect(budget.allow({ ...spend, tools: 0 }, 'Palisade seat configurations', continuation)).resolves.toBe(true)
+      await expect(budget.allow(spend, 'Proceed with the first tool')).resolves.toBe(true)
+    } finally {
+      budget.close()
+    }
+  })
+
+  it('asks for clarification when ambiguity can change the searched result', async () => {
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse('UNCLEAR')
+    })
+    budget.start([user], undefined)
+    await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(false)
+    expect(budget.reason).toBe('ambiguous_input')
+    budget.close()
+  })
+
+  it.each([
+    ['FINISH', 'finish'],
+    ['CLARIFY', 'clarify'],
+    ['Keep searching', 'invalid_output'],
+  ])('settles a review response %s with available results retained by the loop', async (review, reason) => {
+    const responses = ['SOURCES', review]
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(responses.shift() ?? '')
+    })
+    budget.start([user], undefined)
+    await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
+    budget.noteTools(1, 1)
+    await expect(budget.allow({ ...spend, steps: 4 }, 'One source was available')).resolves.toBe(false)
+    expect(budget.reason).toBe(reason)
+    expect(budget.successfulTools).toBe(1)
+    expect(budget.failedTools).toBe(1)
+    budget.close()
+  })
+
   it('reviews spent grants and reserves a tool-free answer at the hard limit', async () => {
     const replies = ['ACTION', 'EXTEND']
     const budget = new SupervisorBudget(new AbortController().signal, async function* () {

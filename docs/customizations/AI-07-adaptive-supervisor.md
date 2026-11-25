@@ -84,3 +84,15 @@ Flash and Opus start at the lowest advertised effort (off, then low) with a 12-s
 A first Chrome replay with this policy used the same two vehicle questions. On Flash, first text / total was 1.53 / 5.17 s for insurance and 1.34 / 5.09 s for registration. On Opus it was 3.09 / 8.60 s and 3.22 / 8.86 s. All four turns used one Worker request and zero tools. The explicit request for official DeepSeek API documentation continued to real tools on both models. Flash ran two tools in 16.34 s total; Opus ran one in 16.68 s. These are single runs. A regression test separately verifies that the continuation restores the selected effort.
 
 A quick chat can have an empty working directory. Set `AI_CONTROL_DEPLOYMENT_CONTEXT` in the service environment to provide a short inventory of enabled integrations for questions about its own deployment. Use only non-secret facts intended for the chat model. The inventory is supplied with the system prompt and is not a billing balance or plan lookup. Questions about a specific project's actual setup are classified as requiring inspection when the deployment context is insufficient.
+
+## Admission after the Palisade incident
+
+The first Worker and classifier start concurrently. Classification estimates the initial grant. A valid continuation requests a capability. DIRECT and DEEP are classification labels and cannot veto a valid capability request. UNCLEAR still opens a clarification response. Actual dispatch continues to require a declared tool, a budget grant, and the existing permission policy.
+
+A deadline on an exploratory request ends exploration and reserves synthesis. The final request has a separate deadline. If that request times out, retain any visible text and give a concrete explanation. User cancellation remains a distinct outcome.
+
+The Palisade baseline on the green Dima instance took 22.459 s, with two Worker requests and zero executed tools. The first Worker requested `needs_sources`. The classifier returned DEEP, the second Worker ran without tools, and the reserved 20-second deadline produced `UNKNOWN`. The regression fixture reproduces the admission failure independently of model sampling.
+
+Source continuation opens only `web_search` and `web_fetch` from the normal scoped tool set. Its initial grant is still bounded and can be reviewed. A hard boundary is rechecked after waiting for classification or review. The review receives counts of successful and failed tool outcomes as well as the available progress summary. Decisions from the dedicated model are requested as JSON and validated against the allowed decision vocabulary.
+
+Final synthesis uses the lowest supported effort and has a separate 35-second deadline. A timeout persists any visible partial response, records `TIMEOUT`, and explains that the user can retry. A user cancellation still records the ordinary aborted outcome.

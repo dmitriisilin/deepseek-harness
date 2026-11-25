@@ -2010,10 +2010,10 @@ describe('parallel Supervisor integration', () => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
     onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: 'SOURCES' } }] })))
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: '{"decision":"DEEP"}' } }] })))
     const adapter = new MockAdapter([
       toolCallResponse('internal', 'request_continuation', { reason: 'needs_sources' }),
-      toolCallResponse('public', 'lookup', {}),
+      toolCallResponse('public', 'web_search', {}),
       textResponse('Verified'),
     ], {
       efforts: [{ id: ReasoningEffortId('low'), name: 'Low' }, { id: ReasoningEffortId('high'), name: 'High' }],
@@ -2021,7 +2021,9 @@ describe('parallel Supervisor integration', () => {
     })
     const ctx = await harness(adapter)
     const execute = vi.fn(async () => [{ type: 'text' as const, text: 'Source' }])
-    ctx.tools.register(defineContentToolFixture({ name: 'lookup', description: '', parameters: {}, execute }))
+    ctx.tools.register(defineContentToolFixture({ name: 'web_search', description: '', parameters: {}, execute }))
+    const unrelated = vi.fn(async () => [{ type: 'text' as const, text: 'Unrelated local tool' }])
+    ctx.tools.register(defineContentToolFixture({ name: 'unrelated', description: '', parameters: {}, execute: unrelated }))
     const agent = await ctx.agentLoop.create(SessionId('quick-continuation'), { provider: 'mock', model: 'claude-opus-5-5' })
     const frames: AssistantStreamFrame[] = []
     ctx.on('agent/assistant-stream', ({ frame }) => { frames.push(frame) })
@@ -2030,8 +2032,9 @@ describe('parallel Supervisor integration', () => {
     await idle
     expect(adapter.requests.map(request => request.reasoningEffort)).toEqual(['low', 'high', 'high'])
     expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toEqual(['request_continuation'])
-    expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toEqual(['lookup'])
+    expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toEqual(['web_search'])
     expect(execute).toHaveBeenCalledTimes(1)
+    expect(unrelated).not.toHaveBeenCalled()
     expect(JSON.stringify(frames)).not.toContain('request_continuation')
     expect(agent.session.deriveMessages().flatMap(message => message.content).some(block =>
       block.type === 'tool-call' && block.name === 'request_continuation')).toBe(false)
@@ -2081,6 +2084,42 @@ describe('parallel Supervisor integration', () => {
     await idle
     expect(adapter.requests).toHaveLength(3)
     expect(adapter.requests[2]?.tools ?? []).toEqual([])
+  })
+
+  it.each([true, false])('reports a final deadline as TIMEOUT and keeps visible text (%s)', async (partial) => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: 'DIRECT' } }] })))
+    const timer = AbortSignal.timeout.bind(AbortSignal)
+    const deadline = new AbortController()
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => ms === 35000 ? deadline.signal : timer(ms))
+    onTestFinished(() => { timeout.mockRestore(); vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const adapter = new MockAdapter([
+      toolCallResponse('request', 'lookup', {}),
+      { hangAfter: partial ? textResponse('partial').slice(0, -1) : [] },
+    ])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('final-deadline'), { provider: 'mock', model: 'mock' })
+    const reachedFinal = Promise.withResolvers<undefined>()
+    let finalAttempt: string | undefined
+    ctx.on('agent/assistant-stream', ({ frame }) => {
+      if (frame.type === 'start' && frame.step === 2) {
+        finalAttempt = frame.attemptId
+        if (!partial) reachedFinal.resolve(undefined)
+      } else if (frame.type === 'chunk' && frame.attemptId === finalAttempt && frame.chunk.type === 'text-delta') {
+        reachedFinal.resolve(undefined)
+      }
+    })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Explain a topic')
+    await reachedFinal.promise
+    deadline.abort(new DOMException('test deadline', 'TimeoutError'))
+    await idle
+    const events = agent.session.snapshotEvents()
+    expect(events.find(event => event.type === 'turn/end')?.data.reason).toMatchObject({
+      kind: 'error', error: { code: 'TIMEOUT' },
+    })
+    expect(events.some(event => event.type === 'assistant/message' && event.data.interrupted === true)).toBe(partial)
   })
 
   it('aborts both in-flight requests on user cancellation', async () => {
