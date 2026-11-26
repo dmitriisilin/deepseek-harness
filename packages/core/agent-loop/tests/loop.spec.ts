@@ -6,7 +6,7 @@ import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import AgentRegistry, { type Agent, type AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 
@@ -2170,6 +2170,70 @@ describe('parallel Supervisor integration', () => {
     expect(systemOf(adapter.requests[1])).not.toContain('Answer briefly and directly')
     expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toContain('lookup')
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each(['success', 'empty', 'error'] as const)('settles a provisional synthesis after one revision attempt (%s)', async (outcome) => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
+    vi.stubEnv('AI_CONTROL_SYNTHESIS_AUDIT', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
+    const responses = ['SOURCES', 'FINISH', 'REVISE']
+    const supervisorFetch = vi.fn(async () => Response.json({
+      choices: [{ message: { content: JSON.stringify({ decision: responses.shift() ?? 'ACCEPT' }) } }],
+    }))
+    vi.stubGlobal('fetch', supervisorFetch)
+    const adapter = new MockAdapter([
+      toolCallResponse('control', 'request_continuation', { reason: 'needs_sources' }),
+      toolCallResponse('discover', 'web_search', {}),
+      toolCallResponse('read', 'web_fetch', {}),
+      toolCallResponse('excess', 'web_fetch', {}),
+      textResponse('Unsupported universal conclusion'),
+      outcome === 'error' ? [{ type: 'finish', reason: { kind: 'error', failure: { message: 'offline', code: 'SERVER' } } }]
+        : textResponse(outcome === 'empty' ? '' : 'Conclusion limited to the documented case'),
+    ])
+    const ctx = await harness(adapter)
+    const url = 'https://example.com/reference'
+    const execute = vi.fn(async () => 'Documented conditions')
+    ctx.tools.register(defineTool({
+      name: 'web_search', description: '', parameters: {},
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+        presentationMeta: () => ({ sources: [{ url }] }),
+      },
+      execute: async () => 'A public source',
+    }))
+    ctx.tools.register(defineTool({
+      name: 'web_fetch', description: '', parameters: {},
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+        presentationMeta: () => ({ url }),
+      },
+      execute,
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('synthesis-audit'), { provider: 'mock', model: 'deepseek-flash' })
+    const frames: AssistantStreamFrame[] = []
+    ctx.on('agent/assistant-stream', ({ frame }) => { frames.push(frame) })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Verify the conditions')
+    await idle
+    expect(supervisorFetch).toHaveBeenCalledTimes(3)
+    expect(execute).toHaveBeenCalledOnce()
+    expect(adapter.requests).toHaveLength(6)
+    expect(adapter.requests.at(-1)?.tools ?? []).toEqual([])
+    expect(JSON.stringify(adapter.requests.at(-1)?.messages)).toContain('provisional synthesis was flagged')
+    expect(JSON.stringify(frames)).not.toContain('Unsupported universal conclusion')
+    const messages = JSON.stringify(agent.session.deriveMessages())
+    if (outcome === 'success') {
+      expect(messages).not.toContain('Unsupported universal conclusion')
+      expect(messages).toContain('Conclusion limited to the documented case')
+    } else {
+      expect(messages).toContain('The source check flagged this answer')
+      expect(messages).toContain('Unsupported universal conclusion')
+    }
   })
 
   it('lets the in-flight Worker and final synthesis finish past the turn budget', async () => {

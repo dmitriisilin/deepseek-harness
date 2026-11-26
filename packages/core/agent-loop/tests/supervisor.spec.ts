@@ -249,6 +249,31 @@ describe('per-turn Supervisor budget', () => {
     }
   })
 
+  it('checks synthesis from read excerpts only while a bounded revision fits', async () => {
+    vi.stubEnv('AI_CONTROL_SYNTHESIS_AUDIT', '1')
+    const replies = ['SOURCES', 'REVISE']
+    const transport = vi.fn(async function* (_options: GenerateOptions) {
+      yield* textResponse(replies.shift() ?? 'ACCEPT')
+    })
+    const budget = new SupervisorBudget(new AbortController().signal, transport)
+    try {
+      budget.start([user], undefined)
+      await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
+      expect(budget.canAuditSynthesis(spend)).toBe(false)
+      budget.noteDiscoveredSourceUrls(['https://example.com/reference'])
+      budget.notePublicSourceExcerpt('https://local.example/resource', 'Undiscovered resource')
+      budget.notePublicSourceExcerpt('https://example.com/reference', 'Documented conditions')
+      expect(budget.canAuditSynthesis({ ...spend, requests: 9 })).toBe(false)
+      expect(budget.canAuditSynthesis(spend)).toBe(true)
+      await expect(budget.synthesisNeedsRevision('Universal statement')).resolves.toBe(true)
+      const payload = transport.mock.calls[1]?.[0].messages[0]?.content[0]
+      expect(payload?.type === 'text' && JSON.parse(payload.text).excerpts).toEqual(['Documented conditions'])
+    } finally {
+      budget.close()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('reviews spent grants and reserves a tool-free answer at the hard limit', async () => {
     const replies = ['ACTION', 'EXTEND']
     const budget = new SupervisorBudget(new AbortController().signal, async function* () {

@@ -550,6 +550,7 @@ export class ReactLoopAgent implements Agent {
             evidenceGate: process.env.AI_CONTROL_FIRST_EVIDENCE_GATE === '1',
             draftReview: process.env.AI_CONTROL_DRAFT_REVIEW === '1',
             progressReview: process.env.AI_CONTROL_PROGRESS_REVIEW === '1',
+            synthesisAudit: process.env.AI_CONTROL_SYNTHESIS_AUDIT === '1',
           } } : {},
           steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
         }))
@@ -600,6 +601,14 @@ export class ReactLoopAgent implements Agent {
     ].filter(Boolean).join('\n\n')
     const tools = quick ? [continuationTool] : assembly.tools
     let firstAttempt = true
+    let provisionalSynthesis: ReturnType<typeof createAssistantMessage> | undefined
+    const auditSynthesis = final && evidencePolicy && supervisor.canAuditSynthesis({
+      requests: (diagnostics?.requests ?? 0) + 2, steps: step, tools: diagnostics?.tools ?? 0,
+    })
+    const warnUnrevised = (message: ReturnType<typeof createAssistantMessage>) => createAssistantMessage({
+      source: message.source,
+      content: [{ type: 'text', text: 'The source check flagged this answer, and the attempted correction did not complete.' }, ...message.content],
+    })
     while (true) {
       const { config, preparedCall } = await this.prepareRequest(turn, step, decision.selection, signal, light)
       const currentContext = this.loopCtx.systemPrompt.refreshContext(assembly, {
@@ -685,7 +694,7 @@ export class ReactLoopAgent implements Agent {
             sourceCheck = checks.sources
             auditDraft = checks.audit
           }
-          const visible = sourceCheck !== true && !(auditDraft && text !== undefined)
+          const visible = sourceCheck !== true && !((auditDraft || auditSynthesis) && text !== undefined)
             && !('index' in chunk && controlBlocks.has(chunk.index))
           live.push(chunk, visible)
           if (visible && diagnostics && diagnostics.firstTextMs === undefined && text?.trim()) {
@@ -697,7 +706,7 @@ export class ReactLoopAgent implements Agent {
         if (!started) throw error
         try {
           if (signal.aborted) {
-            const content = sourceCheck || auditDraft ? [] : live.interruptedBlocks()
+            const content = sourceCheck || auditDraft || auditSynthesis ? [] : live.interruptedBlocks()
             if (content.length > 0) {
               live.settle('assistant/message', () => this.session.append('assistant/message', {
                 turn,
@@ -739,6 +748,17 @@ export class ReactLoopAgent implements Agent {
       }
       try {
         const finish = live.finish
+        if (finish.kind === 'error' && provisionalSynthesis) {
+          signal.throwIfAborted()
+          if (diagnostics && diagnostics.firstTextMs === undefined) {
+            diagnostics.firstTextMs = Math.round(performance.now() - diagnostics.started)
+          }
+          const fallback = warnUnrevised(provisionalSynthesis)
+          live.settle('assistant/message', () => this.session.append('assistant/message', {
+            turn, step, message: fallback, stream: live.stream,
+          }, { surfaceOp: 'append' }).seq)
+          return { kind: 'completed' }
+        }
         if (finish.kind === 'error' || finish.kind === 'aborted') {
           live.settle(
             'assistant/attempt',
@@ -766,7 +786,7 @@ export class ReactLoopAgent implements Agent {
           continue
         }
 
-        const message = createAssistantMessage({
+        let message = createAssistantMessage({
           content: live.blocks(),
           source: {
             provider: request.provider,
@@ -797,7 +817,22 @@ export class ReactLoopAgent implements Agent {
             progress, 'needs_sources')
           return null
         }
-        if (draft.trim() && diagnostics && diagnostics.firstTextMs === undefined) {
+        const synthesis = auditSynthesis && !provisionalSynthesis
+          ? message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ').trim()
+          : ''
+        if (synthesis && finish.kind !== 'max-tokens' && await supervisor.synthesisNeedsRevision(synthesis)) {
+          live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
+          provisionalSynthesis = message
+          this.session.append('user/message', createUserMessage({
+            source: { kind: 'runtime-context', form: 'instructions' },
+            content: [{ type: 'text', text: 'Reconsider the final answer using the actual document excerpts. A provisional synthesis was flagged for a material contradiction or for exceeding the scope of the evidence. In the opening conclusion distinguish the documented cases, preserve their conditions, and state what remains unresolved.' }],
+          }), { surfaceOp: 'append' })
+          continue
+        }
+        if (provisionalSynthesis && !message.content.some(block => block.type === 'text' && block.text.trim())) {
+          message = warnUnrevised(provisionalSynthesis)
+        }
+        if ((draft.trim() || synthesis || provisionalSynthesis) && diagnostics && diagnostics.firstTextMs === undefined) {
           diagnostics.firstTextMs = Math.round(performance.now() - diagnostics.started)
         }
         live.settle(
@@ -845,14 +880,25 @@ export class ReactLoopAgent implements Agent {
             const failed = result.results.filter(item => item.result.isError).length
             supervisor.noteTools(result.results.length - failed, failed)
             const searchIds = new Set(toolCalls.filter(call => call.name === 'web_search').map(call => call.id))
-            const discoveredSources = result.results.some(({ callId, result: outcome }) => {
-              if (outcome.isError || !searchIds.has(callId)) return false
-              const meta = outcome.meta as { sources?: unknown[] } | undefined
-              return Array.isArray(meta?.sources) && meta.sources.length > 0
+            const discoveredUrls = result.results.flatMap(({ callId, result: outcome }) => {
+              if (outcome.isError || !searchIds.has(callId)) return []
+              const meta = outcome.meta as { sources?: { url?: unknown }[] } | undefined
+              if (!Array.isArray(meta?.sources)) return []
+              return meta.sources.flatMap(source => typeof source?.url === 'string' ? [source.url] : [])
             })
+            supervisor.noteDiscoveredSourceUrls(discoveredUrls)
+            if (supervisor.continuation === 'needs_sources') {
+              const fetchIds = new Set(toolCalls.filter(call => call.name === 'web_fetch').map(call => call.id))
+              for (const { callId, result: outcome } of result.results) {
+                if (outcome.isError || !fetchIds.has(callId)) continue
+                const meta = outcome.meta as { url?: unknown } | undefined
+                if (typeof meta?.url !== 'string') continue
+                supervisor.notePublicSourceExcerpt(meta.url, outcome.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'))
+              }
+            }
             supervisor.noteSuccessfulOperations(toolCalls, new Set(result.results.flatMap(item =>
               item.result.isError ? [] : [item.callId],
-            )), discoveredSources)
+            )), discoveredUrls.length > 0)
             setProgress(`${progress} Tool outcomes: ${result.results.length - failed} succeeded, ${failed} failed.`)
           }
           return result.concluded ? { kind: 'completed' } : null
