@@ -79,6 +79,7 @@ interface TurnDiagnostics {
     reason?: string | undefined
   }
   firstTextMs?: number
+  finalAnswerFirstTextMs?: number
   effort?: string
   preparationMs?: number
   requests: number
@@ -685,6 +686,7 @@ export class ReactLoopAgent implements Agent {
       let sourceCheck: boolean | undefined
       let auditDraft = draftReview
       let auditSupplied = false
+      let attemptFirstVisibleTextMs: number | undefined
       const workerStarted = performance.now()
       try {
         if (diagnostics) {
@@ -709,8 +711,9 @@ export class ReactLoopAgent implements Agent {
           const visible = sourceCheck !== true && !((auditDraft || auditSynthesis || auditSupplied) && text !== undefined)
             && !('index' in chunk && controlBlocks.has(chunk.index))
           live.push(chunk, visible)
-          if (visible && diagnostics && diagnostics.firstTextMs === undefined && text?.trim()) {
-            diagnostics.firstTextMs = Math.round(performance.now() - diagnostics.started)
+          if (visible && diagnostics && attemptFirstVisibleTextMs === undefined && text?.trim()) {
+            attemptFirstVisibleTextMs = Math.round(performance.now() - diagnostics.started)
+            diagnostics.firstTextMs ??= attemptFirstVisibleTextMs
           }
         }
         signal.throwIfAborted()
@@ -873,7 +876,12 @@ export class ReactLoopAgent implements Agent {
         if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
 
         const toolCalls = message.content.filter(block => block.type === 'tool-call')
-        if (toolCalls.length === 0) return { kind: 'completed' }
+        if (toolCalls.length === 0) {
+          if (diagnostics && message.content.some(block => block.type === 'text' && block.text.trim())) {
+            diagnostics.finalAnswerFirstTextMs = attemptFirstVisibleTextMs ?? Math.round(performance.now() - diagnostics.started)
+          }
+          return { kind: 'completed' }
+        }
         const progress = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ').slice(-1200)
         setProgress(`${progress} Tools requested: ${toolCalls.map(block => block.name).join(', ')}`)
         if (supervisor && diagnostics && (final || provisionalSynthesis || !await supervisor.allow({

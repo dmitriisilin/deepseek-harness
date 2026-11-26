@@ -489,9 +489,13 @@ describe('agent loop', () => {
   })
 
   it('round-trips tool calls: model requests tool → executes → result in next request', async () => {
+    vi.stubEnv('AI_CONTROL_TURN_LOG', '1')
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1000)
+    onTestFinished(() => { log.mockRestore(); clock.mockRestore(); vi.unstubAllEnvs() })
     const adapter = new MockAdapter([
       toolCallResponse('c1', 'echo', { text: 'ping' }, 'calling echo'),
-      textResponse('done'),
+      () => { clock.mockReturnValue(1250); return textResponse('done') },
     ])
     const ctx = await harness(adapter)
     ctx.tools.register(defineContentToolFixture({
@@ -522,6 +526,8 @@ describe('agent loop', () => {
     const types = agent.session.snapshotEvents().map(e => e.type)
     expect(types).toContain('tool/call')
     expect(types).toContain('tool/result')
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"firstTextMs":0'))
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"finalAnswerFirstTextMs":250'))
   })
 
   it('renders harness identity, then the persona, then tool guidance — with {{variables}} resolved', async () => {
