@@ -2329,6 +2329,34 @@ describe('parallel Supervisor integration', () => {
     }
   })
 
+  it('tells final synthesis when search yielded no readable document', async () => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('AI_CONTROL_FINAL_READS_ONLY', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    const decisions = ['SOURCES', 'FINISH']
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: decisions.shift() } }] })))
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const adapter = new MockAdapter([
+      toolCallResponse('continue', 'request_continuation', { reason: 'needs_sources' }),
+      toolCallResponse('search', 'web_search', {}),
+      toolCallResponse('repeat', 'web_search', {}),
+      textResponse('The source is still unverified'),
+    ])
+    const ctx = await harness(adapter)
+    ctx.tools.register(defineContentToolFixture({
+      name: 'web_search', description: '', parameters: {},
+      execute: async () => [{ type: 'text', text: 'Unopened search lead' }],
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('unread-final-evidence'), { provider: 'mock', model: 'deepseek-flash' })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Verify this from a source')
+    await idle
+    expect(adapter.requests).toHaveLength(4)
+    expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('Unopened search lead')
+    expect(JSON.stringify(adapter.requests[3]?.messages)).toContain('No source document was successfully read in this turn')
+    expect(JSON.stringify(adapter.requests[3]?.messages)).not.toContain('Unopened search lead')
+  })
+
   it('revises a sourced-only inference without opening any tools', async () => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')

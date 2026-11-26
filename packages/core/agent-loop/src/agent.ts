@@ -671,10 +671,15 @@ export class ReactLoopAgent implements Agent {
           advice = 'Lead with the best supported conclusion and the scope that makes it true. Cite the evidence for decisive claims.'
             + ' If sources disagree or do not cover the requested case, distinguish the documented cases and state what remains unresolved.'
         }
+        const noSourceText = supervisor?.continuation === 'needs_sources' && supervisor.sourceDocumentsRead === 0
+          && process.env.AI_CONTROL_FINAL_READS_ONLY === '1'
         const instruction = [
           'This is the final response. No tools are available. Never print commands as tool calls or invent inspection results.',
           advice,
-        ].join(' ')
+          noSourceText
+            ? 'No source document was successfully read in this turn. Identify any external conclusion that remains unverified.'
+            : '',
+        ].filter(Boolean).join(' ')
         this.session.append('user/message', createUserMessage({
           source: { kind: 'runtime-context', form: 'instructions' }, content: [{ type: 'text', text: instruction }],
         }), { surfaceOp: 'append' })
