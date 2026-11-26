@@ -148,6 +148,13 @@ const evidenceResponsePrompt = [
   'If the sources cover only part of the question, answer that part concretely and identify the minimum information needed to resolve the rest.',
 ].join(' ')
 
+const claimEvidencePrompt = [
+  'For each decisive claim, establish what the evidence actually says and the conditions under which it applies before composing the answer.',
+  'Use an inspected passage for a definitive claim. Treat search summaries and unread links as leads.',
+  'If a source describes one case and the user asks about a wider set, answer for the documented case and leave the rest open.',
+  'If you cannot point to support for a recommendation, make it conditional or omit it. Keep the same scope in the opening and conclusion.',
+].join(' ')
+
 /** Remove adapter-derived values before plugins propose the next request config. */
 function requestProposal(header: EpochHeader): LlmCallConfig {
   if (header.adapterDefaults === undefined) return header.config
@@ -552,6 +559,7 @@ export class ReactLoopAgent implements Agent {
             firstEffort: process.env.AI_CONTROL_FIRST_EFFORT === 'selected' ? 'selected' : 'reduced',
             neutralGuidance: process.env.AI_CONTROL_FIRST_GUIDANCE === 'neutral',
             evidenceGate: process.env.AI_CONTROL_FIRST_EVIDENCE_GATE === '1',
+            claimEvidence: process.env.AI_CONTROL_CLAIM_EVIDENCE === '1',
             draftReview: process.env.AI_CONTROL_DRAFT_REVIEW === '1',
             progressReview: process.env.AI_CONTROL_PROGRESS_REVIEW === '1',
             synthesisAudit: process.env.AI_CONTROL_SYNTHESIS_AUDIT === '1',
@@ -602,7 +610,8 @@ export class ReactLoopAgent implements Agent {
       deploymentContext && `AI Control deployment context. Use only for questions about this deployment: ${deploymentContext}`,
       quick && (process.env.AI_CONTROL_FIRST_GUIDANCE === 'neutral' ? neutralQuickPrompt : quickPrompt),
       hintOnly && firstResponseHint,
-      evidencePolicy && supervisor.continuation === 'needs_sources' && evidenceResponsePrompt,
+      evidencePolicy && supervisor.continuation === 'needs_sources'
+        && (process.env.AI_CONTROL_CLAIM_EVIDENCE === '1' ? claimEvidencePrompt : evidenceResponsePrompt),
     ].filter(Boolean).join('\n\n')
     const tools = quick ? [continuationTool] : assembly.tools
     let firstAttempt = true
@@ -651,7 +660,7 @@ export class ReactLoopAgent implements Agent {
         if (supervisor?.reason === 'supplied_only') {
           advice = 'Use only the material supplied by the user. Identify limits or ambiguities within it without adding external facts.'
         } else if (supervisor?.reason === 'clarify' || supervisor?.reason === 'ambiguous_input') {
-          advice = 'Ask one concise question if the available information is insufficient.'
+          advice = 'Give what can be established from the available information and ask one concise question about the decisive missing detail.'
         } else if (evidencePolicy && supervisor?.continuation === 'needs_sources') {
           advice = 'Lead with the best supported conclusion and the scope that makes it true. Cite the evidence for decisive claims.'
             + ' If sources disagree or do not cover the requested case, distinguish the documented cases and state what remains unresolved.'
@@ -684,6 +693,7 @@ export class ReactLoopAgent implements Agent {
       let started = false
       const controlBlocks = new Set<number>()
       let sourceCheck: boolean | undefined
+      let clarify = false
       let auditDraft = draftReview
       let auditSupplied = false
       let attemptFirstVisibleTextMs: number | undefined
@@ -705,10 +715,11 @@ export class ReactLoopAgent implements Agent {
           if (evidenceGate && sourceCheck === undefined && text?.trim()) {
             const checks = await supervisor.firstAnswerChecks(draftReview)
             sourceCheck = checks.sources
+            clarify = checks.clarify
             auditDraft = checks.audit
             auditSupplied = await supervisor.shouldAuditSuppliedAnswer()
           }
-          const visible = sourceCheck !== true && !((auditDraft || auditSynthesis || auditSupplied) && text !== undefined)
+          const visible = !clarify && sourceCheck !== true && !((auditDraft || auditSynthesis || auditSupplied) && text !== undefined)
             && !('index' in chunk && controlBlocks.has(chunk.index))
           live.push(chunk, visible)
           if (visible && diagnostics && attemptFirstVisibleTextMs === undefined && text?.trim()) {
@@ -721,7 +732,7 @@ export class ReactLoopAgent implements Agent {
         if (!started) throw error
         try {
           if (signal.aborted) {
-            const content = sourceCheck || auditDraft || auditSynthesis || auditSupplied ? [] : live.interruptedBlocks()
+            const content = clarify || sourceCheck || auditDraft || auditSynthesis || auditSupplied ? [] : live.interruptedBlocks()
             if (content.length > 0) {
               live.settle('assistant/message', () => this.session.append('assistant/message', {
                 turn,
@@ -820,6 +831,11 @@ export class ReactLoopAgent implements Agent {
           else if (diagnostics) await supervisor.allow({
             requests: diagnostics.requests + 1, steps: step + 1, tools: diagnostics.tools,
           }, `Worker requested continuation: ${reason}`, reason)
+          return null
+        }
+        if (clarify && supervisor) {
+          live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
+          supervisor.finish('ambiguous_input')
           return null
         }
         const draft = auditDraft ? message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ') : ''

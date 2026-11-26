@@ -2130,6 +2130,7 @@ describe('parallel Supervisor integration', () => {
     vi.stubEnv('AI_CONTROL_DRAFT_REVIEW', audit ? '1' : '0')
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
+    vi.stubEnv('AI_CONTROL_CLAIM_EVIDENCE', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
     const decisions = audit ? ['DIRECT', 'VERIFY'] : ['SOURCES']
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({
@@ -2152,11 +2153,37 @@ describe('parallel Supervisor integration', () => {
     const idle = waitForIdle(ctx, agent)
     send(agent, 'Confirm the rule from a source')
     await idle
+    const sourceInstruction = 'Treat search summaries and unread links as leads.'
+    expect(JSON.stringify(adapter.requests[0]?.messages)).not.toContain(sourceInstruction)
+    expect(JSON.stringify(adapter.requests[1]?.messages)).toContain(sourceInstruction)
     expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toEqual(['web_search'])
     expect(JSON.stringify(adapter.requests[1]?.messages)).not.toContain('Unsupported claim')
     expect(JSON.stringify(frames)).not.toContain('Unsupported claim')
     const answers = agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(JSON.stringify(answers)).toContain('Verified with source')
+  })
+
+  it('replaces an ambiguous first draft with a bounded clarification', async () => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      choices: [{ message: { content: 'UNCLEAR' } }],
+    })))
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const adapter = new MockAdapter([textResponse('Unsupported certainty'), textResponse('Which version is installed?')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('ambiguous-first-draft'), { provider: 'mock', model: 'deepseek-flash' })
+    const frames: AssistantStreamFrame[] = []
+    ctx.on('agent/assistant-stream', ({ frame }) => { frames.push(frame) })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Does my version support this setting?')
+    await idle
+    expect(adapter.requests).toHaveLength(2)
+    expect(adapter.requests[1]?.tools ?? []).toEqual([])
+    expect(JSON.stringify(adapter.requests[1]?.messages)).toContain('decisive missing detail')
+    expect(JSON.stringify(frames)).not.toContain('Unsupported certainty')
+    expect(JSON.stringify(agent.session.deriveMessages())).toContain('Which version is installed?')
   })
 
   it.each(['accept', 'unavailable'])('releases the Worker answer after evidence review: %s', async (review) => {

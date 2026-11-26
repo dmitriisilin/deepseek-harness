@@ -224,10 +224,15 @@ export class SupervisorBudget {
     return decision?.reason === 'supplied_only'
   }
 
-  async firstAnswerChecks(audit: boolean): Promise<{ sources: boolean; audit: boolean }> {
+  async firstAnswerChecks(audit: boolean): Promise<{ sources: boolean; audit: boolean; clarify: boolean }> {
     const decision = await this.initial
     this.signal.throwIfAborted()
-    return { sources: decision?.reason === 'needs_sources', audit: audit && decision?.reason !== 'self_contained' && decision?.reason !== 'supplied_only' }
+    const clarify = decision?.reason === 'ambiguous_input'
+    return {
+      sources: decision?.reason === 'needs_sources',
+      clarify,
+      audit: audit && !clarify && decision?.reason !== 'self_contained' && decision?.reason !== 'supplied_only',
+    }
   }
 
   async recoverContinuation(): Promise<ContinuationReason | undefined> {

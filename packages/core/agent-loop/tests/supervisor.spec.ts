@@ -105,6 +105,7 @@ describe('per-turn Supervisor budget', () => {
     ['SELF_CONTAINED', false, false],
     ['DIRECT', false, true],
     ['SOURCES', true, true],
+    ['UNCLEAR', false, false],
     ['invalid output', false, true],
   ])('selects first-answer checks for %s', async (label, sources, audit) => {
     const budget = new SupervisorBudget(new AbortController().signal, async function* () {
@@ -112,7 +113,7 @@ describe('per-turn Supervisor budget', () => {
     })
     try {
       budget.start([user], undefined)
-      await expect(budget.firstAnswerChecks(true)).resolves.toEqual({ sources, audit })
+      await expect(budget.firstAnswerChecks(true)).resolves.toEqual({ sources, audit, clarify: label === 'UNCLEAR' })
     } finally {
       budget.close()
     }
@@ -124,7 +125,7 @@ describe('per-turn Supervisor budget', () => {
     })
     try {
       budget.start([user], undefined)
-      await expect(budget.firstAnswerChecks(true)).resolves.toEqual({ sources: false, audit: false })
+      await expect(budget.firstAnswerChecks(true)).resolves.toEqual({ sources: false, audit: false, clarify: false })
       await expect(budget.allow(spend, 'Worker proposed an external lookup', 'needs_sources')).resolves.toBe(false)
       expect(budget.reason).toBe('supplied_only')
     } finally {
