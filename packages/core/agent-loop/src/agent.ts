@@ -554,6 +554,7 @@ export class ReactLoopAgent implements Agent {
             draftReview: process.env.AI_CONTROL_DRAFT_REVIEW === '1',
             progressReview: process.env.AI_CONTROL_PROGRESS_REVIEW === '1',
             synthesisAudit: process.env.AI_CONTROL_SYNTHESIS_AUDIT === '1',
+            suppliedAudit: process.env.AI_CONTROL_SUPPLIED_AUDIT === '1',
           } } : {},
           steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
         }))
@@ -613,7 +614,7 @@ export class ReactLoopAgent implements Agent {
       content: [{ type: 'text', text: 'The source check flagged this answer, and the attempted correction did not complete.' }, ...message.content],
     })
     while (true) {
-      const { config, preparedCall } = await this.prepareRequest(turn, step, decision.selection, signal, light)
+      const { config, preparedCall } = await this.prepareRequest(turn, step, decision.selection, signal, light && !provisionalSynthesis)
       const currentContext = this.loopCtx.systemPrompt.refreshContext(assembly, {
         ...assembleContextFor(this, signal), modelSelection: decision.selection,
       })
@@ -683,6 +684,7 @@ export class ReactLoopAgent implements Agent {
       const controlBlocks = new Set<number>()
       let sourceCheck: boolean | undefined
       let auditDraft = draftReview
+      let auditSupplied = false
       const workerStarted = performance.now()
       try {
         if (diagnostics) {
@@ -702,8 +704,9 @@ export class ReactLoopAgent implements Agent {
             const checks = await supervisor.firstAnswerChecks(draftReview)
             sourceCheck = checks.sources
             auditDraft = checks.audit
+            auditSupplied = await supervisor.shouldAuditSuppliedAnswer()
           }
-          const visible = sourceCheck !== true && !((auditDraft || auditSynthesis) && text !== undefined)
+          const visible = sourceCheck !== true && !((auditDraft || auditSynthesis || auditSupplied) && text !== undefined)
             && !('index' in chunk && controlBlocks.has(chunk.index))
           live.push(chunk, visible)
           if (visible && diagnostics && diagnostics.firstTextMs === undefined && text?.trim()) {
@@ -715,7 +718,7 @@ export class ReactLoopAgent implements Agent {
         if (!started) throw error
         try {
           if (signal.aborted) {
-            const content = sourceCheck || auditDraft || auditSynthesis ? [] : live.interruptedBlocks()
+            const content = sourceCheck || auditDraft || auditSynthesis || auditSupplied ? [] : live.interruptedBlocks()
             if (content.length > 0) {
               live.settle('assistant/message', () => this.session.append('assistant/message', {
                 turn,
@@ -803,7 +806,7 @@ export class ReactLoopAgent implements Agent {
             ...live.replayState !== undefined ? { replayState: live.replayState } : {},
           },
         })
-        if (quick && message.content.some(block => block.type === 'tool-call')) {
+        if (quick && !provisionalSynthesis && message.content.some(block => block.type === 'tool-call')) {
           live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
           const call = message.content.find(block => block.type === 'tool-call' && block.name === continuationTool.name)
           const requested = call?.type === 'tool-call' ? continuationReason(call.arguments) : undefined
@@ -826,11 +829,11 @@ export class ReactLoopAgent implements Agent {
             progress, 'needs_sources')
           return null
         }
-        const synthesis = auditSynthesis && !provisionalSynthesis && !message.content.some(block => block.type === 'tool-call')
+        const synthesis = (auditSynthesis || auditSupplied) && !provisionalSynthesis && !message.content.some(block => block.type === 'tool-call')
           ? message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ').trim()
           : ''
         const revisionAdvice = synthesis && finish.kind !== 'max-tokens'
-          ? await supervisor?.synthesisRevisionAdvice(synthesis)
+          ? await supervisor?.synthesisRevisionAdvice(synthesis, auditSupplied)
           : undefined
         if (revisionAdvice) {
           live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
@@ -839,7 +842,9 @@ export class ReactLoopAgent implements Agent {
           this.session.append('user/message', createUserMessage({
             source: { kind: 'runtime-context', form: 'instructions' },
             content: [{ type: 'text', text: [
-              'For this revision only, reconsider the final answer using the actual document excerpts.',
+              auditSupplied
+                ? 'For this revision only, reconsider the answer using only the material supplied by the user.'
+                : 'For this revision only, reconsider the final answer using the actual document excerpts.',
               'A provisional synthesis was flagged. Treat the following note as an unverified observation to check against the sources:',
               JSON.stringify(revisionAdvice),
               'Give a concise corrected answer. Keep the supported parts and remove recommendations that require unverified conditions.',

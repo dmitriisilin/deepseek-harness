@@ -2283,6 +2283,32 @@ describe('parallel Supervisor integration', () => {
     }
   })
 
+  it('revises a sourced-only inference without opening any tools', async () => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
+    vi.stubEnv('AI_CONTROL_SUPPLIED_AUDIT', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const decisions = [
+      { decision: 'SUPPLIED_ONLY' },
+      { decision: 'REVISE', observation: 'The record confirms a build, not a test run.' },
+    ]
+    const fetch = vi.fn(async () => Response.json({ choices: [{ message: { content: JSON.stringify(decisions.shift()) } }] }))
+    vi.stubGlobal('fetch', fetch)
+    const adapter = new MockAdapter([textResponse('The tests passed'), textResponse('Test results are unverified')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('audit-supplied'), { provider: 'mock', model: 'deepseek-flash' })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Only from the supplied record: the build ran. Did tests pass?')
+    await idle
+    expect(adapter.requests).toHaveLength(2)
+    expect(adapter.requests[1]?.tools ?? []).toEqual([])
+    expect(JSON.stringify(adapter.requests[1]?.messages)).toContain('only the material supplied by the user')
+    expect(JSON.stringify(agent.session.deriveMessages())).toContain('Test results are unverified')
+    expect(JSON.stringify(agent.session.deriveMessages())).not.toContain('The tests passed')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
   it('lets the in-flight Worker and final synthesis finish past the turn budget', async () => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
