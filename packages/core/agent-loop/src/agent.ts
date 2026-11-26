@@ -1116,10 +1116,13 @@ export class ReactLoopAgent implements Agent {
     // canonicalHeader is shallow; append logs a detached snapshot, not these local values.
     deepFreeze(header)
     const history = session.deriveMessages()
-    const searchCalls = omitSearchLeads ? new Set(history.flatMap(message => message.role === 'assistant'
-      ? message.content.flatMap(block => block.type === 'tool-call' && block.name === 'web_search' ? [block.id] : [])
-      : [])) : undefined
-    const boundaryMessages = searchCalls ? history.map(message => message.role === 'tool' && searchCalls.has(message.toolCallId)
+    const currentTurnStart = history.findLastIndex(message => message.role === 'user' && message.source.kind === 'user')
+    const searchCalls = omitSearchLeads && currentTurnStart >= 0
+      ? new Set(history.slice(currentTurnStart + 1).flatMap(message => message.role === 'assistant'
+        ? message.content.flatMap(block => block.type === 'tool-call' && block.name === 'web_search' ? [block.id] : [])
+        : []))
+      : undefined
+    const boundaryMessages = searchCalls ? history.map((message, index) => index > currentTurnStart && message.role === 'tool' && searchCalls.has(message.toolCallId)
       ? createToolResultMessage({
         callId: message.toolCallId,
         isError: message.isError === true,

@@ -2340,6 +2340,44 @@ describe('parallel Supervisor integration', () => {
     }
   })
 
+  it('filters discovery output only in the current turn', async () => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('AI_CONTROL_FINAL_READS_ONLY', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    const decisions = ['SOURCES', 'SOURCES', 'FINISH']
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: decisions.shift() } }] })))
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const adapter = new MockAdapter([
+      toolCallResponse('first-continuation', 'request_continuation', { reason: 'needs_sources' }),
+      toolCallResponse('prior-search', 'web_search', {}),
+      textResponse('First answer'),
+      toolCallResponse('second-continuation', 'request_continuation', { reason: 'needs_sources' }),
+      toolCallResponse('current-search', 'web_search', {}),
+      toolCallResponse('repeat', 'web_search', {}),
+      textResponse('Follow-up answer'),
+    ])
+    const ctx = await harness(adapter)
+    const results = ['Prior search result', 'Current search result']
+    ctx.tools.register(defineContentToolFixture({
+      name: 'web_search', description: '', parameters: {},
+      execute: async () => [{ type: 'text', text: results.shift() ?? 'Unexpected search' }],
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('current-discovery-projection'), { provider: 'mock', model: 'deepseek-flash' })
+    const firstIdle = waitForIdle(ctx, agent)
+    send(agent, 'Find the first reference')
+    await firstIdle
+    const secondIdle = waitForIdle(ctx, agent)
+    send(agent, 'Verify the second reference')
+    await secondIdle
+    expect(adapter.requests).toHaveLength(7)
+    const finalHistory = JSON.stringify(adapter.requests.at(-1)?.messages)
+    expect(finalHistory).toContain('Prior search result')
+    expect(finalHistory).toContain('First answer')
+    expect(finalHistory).toContain('Search discovery only')
+    expect(finalHistory).not.toContain('Current search result')
+    expect(JSON.stringify(agent.session.deriveMessages())).toContain('Current search result')
+  })
+
   it('tells final synthesis when search yielded no readable document', async () => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('AI_CONTROL_FINAL_READS_ONLY', '1')

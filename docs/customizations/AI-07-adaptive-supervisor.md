@@ -578,3 +578,9 @@ The ordinary answer found the manufacturer's restriction on using the seat mecha
 | Percentage | 1.72 / 1.72 | 1.46 / 1.46 | 1 / 0 in both |
 
 The Supervisor column is the earlier guidance-on control with standard starting allowance and no synthesis audit. The ordinary insurance answer failed the effective-rule check by citing superseded regulation 431-P as current. The ordinary registration answer remembered the condition and distinguished registration from insuring the car. It gave a broader conclusion than its references established and used a secondary reference for the current insurance requirement. The percentage control passed in both. This pair shows a large reduction in Palisade work, but no consistent speedup across complex cases and no robust comparative quality win.
+
+### Scope of final discovery projection
+
+The projection experiment now replaces search output only for the current user turn, retaining prior turns and preserving the full durable history. A deterministic two-turn check confirms that only current search output is replaced in the final request, with the earlier answer and search output retained. This is a context boundary correction in the opt-in final-reads mode.
+
+In the red Flash replay, insurance opened no documents and disclosed the limitation after giving broad advice. The registration follow-up retained the vehicle context, but overgeneralized the inspection requirement and did not consistently separate insurance from registration. The answer failed the content gate. The second turn completed naturally without the tool-free projection, so it does not measure the effect of the change. Final first text / total was 38.31 / 41.81 s for insurance and 50.56 / 53.92 s for registration. The corresponding prior measurements were 40.45 / 43.83 and 57.33 / 60.79 s. Different search paths and the lack of projection on the follow-up preclude attributing those changes to the patch.
