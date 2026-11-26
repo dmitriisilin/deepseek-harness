@@ -380,3 +380,35 @@ A separate direct Flash synthesis comparison fixed the successful reads and remo
 The direct Flash replay kept read documents unchanged and added either search results or the previous assistant answer. In Palisade, adding search results changed the response from leaving the seat mechanism unresolved to citing unread leads as supporting evidence, although the final wording still advised checking the exact car. Generation took 5.25 s with readings alone and 6.23 s with search results. In the registration follow-up, readings alone left eligibility unresolved (2.88 s). Adding the previous assistant answer still left it unresolved (4.09 s). Adding search results led to categorical advice on grounds for refusing registration without having read the relevant rule (5.40 s). This small controlled reproduction implicates search results as an evidence-quality risk independently of the earlier assistant reply. It supports testing an answer context that keeps search results for discovery but presents successful reads as the evidence for final synthesis.
 
 The `AI_CONTROL_FINAL_READS_ONLY` trial changes only the message projection for tool-free final synthesis and source revisions. It replaces matching web search results with a neutral discovery marker while retaining the result role and call identity, and forwards the retrieved pages unchanged. Searches and reads still see the original results during exploration. The durable session retains its full history. A Worker that answers directly from an exploratory request still sees search results in that request. Report that path separately in the comparison. The five synthesis/revision test variants passed, including checks that the original search result persisted in session history and was absent from the revised request.
+
+In the unfiltered Flash control, Palisade reached a tool-free final request after the Supervisor chose FINISH. It again extrapolated a single mechanism across versions and repeated the unsafe statement about moving between rows while the vehicle is in motion. The content gate failed. Final first text / total was 171.68 / 181.17 s with six Worker requests and five tools. This is an individual control observation pending the matched configuration.
+
+The unfiltered insurance control again distinguished liability from damage coverage, but based its current conclusion on commentary about an older regulatory instrument. This misses the source-currency criterion. Final first text / total was 45.25 / 50.73 s with five Worker requests and three tools.
+
+The unfiltered registration follow-up separated insurance paperwork from registration and identified the need to check vehicle identification. Its diagnostic-card section advanced a specific effective date while citing secondary reports that disagreed on the date. It did not establish that legal change from the material it cited. The answer failed the source-currency criterion even though it was more specific about the governing registration law than the earlier replay. Final first text / total was 59.43 / 65.75 s with five Worker requests and three tools.
+
+### Failure checks and their limits
+
+| Condition | Deterministic evidence | What the check establishes |
+| --- | --- | --- |
+| Supervisor unavailable | Provider-error fallback and bounded-provider-retry tests | Failure falls back to a bounded route, and retries consume the operation budget. |
+| Parallel tool proposals | Entire tool-batch gate cases for action, direct and classifier failure | Admission is evaluated for the whole batch before dispatch. |
+| Repeated operations | Structural next-operation review test | The reviewer sees whether the proposal repeats a successful operation without seeing private tool arguments. |
+| Empty search or unread page | Source-reading reservation cases and HTTP-denied synthesis case | An empty discovery gets no read reservation. An HTTP-denied page contributes no audit excerpt. |
+| User cancellation | Both in-flight requests cancellation test | The shared user cancellation reaches Worker and Supervisor. |
+| Elapsed budget during a request | In-flight Worker and final synthesis deadline test | A running Worker and the final response can finish after the budget threshold. |
+| Conflicting or insufficient evidence | Frozen entailment and held-out source replays | The live answer rubric checks that unresolved facts stay open. The replays still show substantive failures. |
+
+With final search results masked, the paired Palisade replay disclosed that it had not verified the exact walk-in mechanism and dropped the unsafe suggestion about moving between rows while the vehicle is in motion. It still asserted without adequate evidence that an installed child restraint always blocks access in the eight-seat configuration. The answer improved on the decisive mechanism claim and still failed the full quality gate. Final first text / total was 56.84 / 62.55 s with six Worker requests and four tools. Because the two runs followed different search paths, the observed latency difference is not an estimate of the filtering cost.
+
+With masking enabled, insurance distinguished the two policies and explicitly disclosed that the official text was unavailable (49.27 / 53.38 s, four tools). This improved transparency over citing an older instrument as current, although the decisive claim still lacked a current primary source. The registration follow-up used an administrative service page and did not repeat the disputed effective date (41.69 / 45.20 s, three tools). It left the insurance requirement unverified and referred the user to the local office, so the answer still misses the effective-rule criterion. Arithmetic remained correct in one request (1.55 s).
+
+Both Python responses passed the language-version criterion. The filtered response distinguished the documentation it read from a mailing-list post it had not opened. Both arithmetic responses passed. The three difficult regressions still missed at least one decisive criterion after filtering. All timings below are first text of final answer / total, in seconds.
+
+| Scenario | Unfiltered | Final reads only |
+| --- | --- | --- |
+| Palisade | 171.68 / 181.16, 6 requests, 5 tools | 56.84 / 62.55, 6 requests, 4 tools |
+| Insurance | 45.25 / 50.73, 5 requests, 3 tools | 49.27 / 53.38, 6 requests, 4 tools |
+| Registration follow-up | 59.43 / 65.75, 5 requests, 3 tools | 41.69 / 45.20, 5 requests, 3 tools |
+| Arithmetic | 1.65 / 1.66, 1 requests, 0 tools | 1.55 / 1.55, 1 requests, 0 tools |
+| Python primary source | 48.38 / 52.04, 4 requests, 2 tools | 37.85 / 41.80, 5 requests, 4 tools |
