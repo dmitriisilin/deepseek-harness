@@ -566,6 +566,7 @@ export class ReactLoopAgent implements Agent {
             evidenceGate: process.env.AI_CONTROL_FIRST_EVIDENCE_GATE === '1',
             claimEvidence: process.env.AI_CONTROL_CLAIM_EVIDENCE === '1',
             finalReadsOnly: process.env.AI_CONTROL_FINAL_READS_ONLY === '1',
+            sourceReadGuidance: process.env.AI_CONTROL_SOURCE_READ_GUIDANCE === '1',
             draftReview: process.env.AI_CONTROL_DRAFT_REVIEW === '1',
             progressReview: process.env.AI_CONTROL_PROGRESS_REVIEW === '1',
             synthesisAudit: process.env.AI_CONTROL_SYNTHESIS_AUDIT === '1',
@@ -616,6 +617,9 @@ export class ReactLoopAgent implements Agent {
       deploymentContext && `AI Control deployment context. Use only for questions about this deployment: ${deploymentContext}`,
       quick && (process.env.AI_CONTROL_FIRST_GUIDANCE === 'neutral' ? neutralQuickPrompt : quickPrompt),
       hintOnly && firstResponseHint,
+      !final && supervisor?.continuation === 'needs_sources' && supervisor.hasUnopenedSourceLeads
+        && process.env.AI_CONTROL_SOURCE_READ_GUIDANCE === '1'
+        && 'Search found leads, but no source document has been read. If a lead could resolve a material claim, open it now. Only search again if the existing leads cannot resolve that claim.',
       evidencePolicy && supervisor.continuation === 'needs_sources'
         && (process.env.AI_CONTROL_CLAIM_EVIDENCE === '1' ? claimEvidencePrompt : evidenceResponsePrompt),
     ].filter(Boolean).join('\n\n')

@@ -464,3 +464,18 @@ Flash replayed the same three checkpoint questions with only the first effort to
 | Arithmetic | 1.58 / 1.71 | 1.47 / 1.47 | 1 / 0 → 1 / 0 |
 
 This pair does not demonstrate a material correctness gain from selecting higher effort on the initial request. Git changed its request sequence, and a single observation cannot establish the size or persistence of a latency penalty. The experiment does not support a default change on its own.
+
+### Guidance to open discovered sources
+
+A Flash comparison varied only `AI_CONTROL_SOURCE_READ_GUIDANCE`. The guidance is eligible on a subsequent non-final request after search returned links and before a readable document has been obtained. It asks the Worker to open a lead relevant to a material claim, with another search available if existing leads are inadequate. It changes no tool grants or turn limits.
+
+Both Palisade runs opened three documents. The guidance run narrowed the main answer to a documented market and asked for year and market in order to resolve the seat question. It still made an insufficiently established inference about child-seat installation and the slide mechanism. Insurance improved from zero to two document reads, but the final answer presented secondary reporting as evidence of exhaustive refusal grounds. The registration follow-up preserved the original context and opened one additional document, but still did not establish the relevant current statutory requirements from a primary text. The arithmetic answer was correct in both variants.
+
+| Flash case | Guidance off, final first text / total (s) | Guidance on, final first text / total (s) | Worker requests / tools / readable documents, off → on |
+| --- | ---: | ---: | --- |
+| Palisade | 77.50 / 83.80 | 70.69 / 73.23 | 5 / 6 / 3 → 6 / 7 / 3 |
+| Insurance | 47.97 / 53.59 | 40.45 / 43.83 | 4 / 1 / 0 → 5 / 3 / 2 |
+| Registration follow-up | 51.70 / 56.35 | 57.33 / 60.79 | 4 / 2 / 1 → 4 / 3 / 2 |
+| Percentage | 1.19 / 1.19 | 1.46 / 1.46 | 1 / 0 / 0 → 1 / 0 / 0 |
+
+Document counts measure access, not whether a source supports the decisive claim. This pair does not justify enabling the guidance by default. It motivates measuring source authority, exact scope and direct support independently of document count.

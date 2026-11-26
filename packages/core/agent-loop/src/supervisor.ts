@@ -514,6 +514,10 @@ export class SupervisorBudget {
     return JSON.stringify([call.name, call.arguments])
   }
 
+  get hasUnopenedSourceLeads(): boolean {
+    return this.sourceDiscoverySucceeded && this.documentsRead.size === 0
+  }
+
   get sourceDocumentsRead(): number {
     return this.documentsRead.size
   }

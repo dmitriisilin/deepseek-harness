@@ -2335,6 +2335,7 @@ describe('parallel Supervisor integration', () => {
   it('tells final synthesis when search yielded no readable document', async () => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('AI_CONTROL_FINAL_READS_ONLY', '1')
+    vi.stubEnv('AI_CONTROL_SOURCE_READ_GUIDANCE', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
     const decisions = ['SOURCES', 'FINISH']
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: decisions.shift() } }] })))
@@ -2346,15 +2347,22 @@ describe('parallel Supervisor integration', () => {
       textResponse('The source is still unverified'),
     ])
     const ctx = await harness(adapter)
-    ctx.tools.register(defineContentToolFixture({
+    ctx.tools.register(defineTool({
       name: 'web_search', description: '', parameters: {},
-      execute: async () => [{ type: 'text', text: 'Unopened search lead' }],
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+        presentationMeta: () => ({ sources: [{ url: 'https://example.com/reference' }] }),
+      },
+      execute: async () => 'Unopened search lead',
     }))
     const agent = await ctx.agentLoop.create(SessionId('unread-final-evidence'), { provider: 'mock', model: 'deepseek-flash' })
     const idle = waitForIdle(ctx, agent)
     send(agent, 'Verify this from a source')
     await idle
     expect(adapter.requests).toHaveLength(4)
+    expect(JSON.stringify(adapter.requests[1])).not.toContain('Search found leads')
+    expect(JSON.stringify(adapter.requests[2])).toContain('Search found leads')
     expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('Unopened search lead')
     expect(JSON.stringify(adapter.requests[3]?.messages)).toContain('No source document was successfully read in this turn')
     expect(JSON.stringify(adapter.requests[3]?.messages)).not.toContain('Unopened search lead')
