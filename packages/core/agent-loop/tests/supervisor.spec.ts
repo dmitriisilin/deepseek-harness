@@ -207,6 +207,26 @@ describe('per-turn Supervisor budget', () => {
     budget.close()
   })
 
+  it.each([
+    ['CLARIFY', 'finish'],
+    ['CLARIFY: The installed version is unknown.', 'clarify'],
+  ])('requires a concrete clarification finding at the progress checkpoint (%s)', async (review, reason) => {
+    vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
+    const replies = ['SOURCES', review]
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(replies.shift() ?? '')
+    })
+    try {
+      budget.start([user], undefined)
+      await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
+      await expect(budget.allow({ ...spend, steps: 4 }, 'One source was available')).resolves.toBe(false)
+      expect(budget.reason).toBe(reason)
+    } finally {
+      budget.close()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('gives the review structural next-operation evidence while keeping tool arguments local', async () => {
     vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
     const transport = vi.fn(async function* (options: GenerateOptions) {
