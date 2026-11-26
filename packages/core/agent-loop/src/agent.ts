@@ -1105,7 +1105,7 @@ export class ReactLoopAgent implements Agent {
     const boundaryMessages = searchCalls ? history.map(message => message.role === 'tool' && searchCalls.has(message.toolCallId)
       ? createToolResultMessage({
         callId: message.toolCallId,
-        isError: message.isError,
+        isError: message.isError === true,
         content: [{ type: 'text', text: 'Search discovery only. Use the documents read separately as evidence for conclusions.' }],
       })
       : message) : history
