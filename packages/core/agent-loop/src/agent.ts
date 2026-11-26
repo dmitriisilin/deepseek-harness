@@ -130,6 +130,7 @@ const neutralQuickPrompt = [
   'Give a concise direct answer when the information already available supports the main conclusion.',
   'Check every intermediate claim you include against its inputs. Leave out assertions that do not help answer the request.',
   'If the user asks you to use only supplied material, preserve its distinctions and conditions and keep the answer within that material.',
+  'When the stated premises support different conclusions, explain the implications under each. Choose one only if there is evidence that resolves the conflict.',
   'Before answering, ask whether a missing or unverified assumption could materially change that conclusion.',
   'If you can resolve that gap using another operation, call request_continuation with the appropriate reason.',
   'If progress depends on something only the user can supply, ask one focused question or give a clearly conditional answer.',

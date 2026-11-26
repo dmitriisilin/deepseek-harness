@@ -219,3 +219,31 @@ A subsequent unseen set checked weighted rates, a two-turn data-schema question,
 The supplied-material route honors an explicit user scope on the same boundary. If the initial classifier detects this scope, a proposed continuation moves to tool-free synthesis with an instruction to preserve the supplied facts and conditions.
 
 In the Flash repeat after recovery, both Git manual pages returned HTTP 200. The turn completed in 17.64 s, with first text at 14.24 s, four Worker requests and two executed reads. The earlier 8.55 s Flash answer omitted the requested verification. This is a before/after change in task completion, as well as a latency increase. The first classifier also selected a different route in the repeat, so the live comparison alone cannot isolate the recovery change. The deterministic loop test verifies that the original undeclared call never dispatches and a fresh admitted call can run.
+
+### Candidate selection protocol
+
+The final comparison uses reduced first effort, neutral first guidance, the evidence gate with selective draft audit, and progress-aware review. The separate synthesis audit stays disabled because the trials did not establish that it reliably caught important errors. The same options run on Flash and Opus in isolated profiles. The comparison preserves the historical baseline and treats every replay as a separate observation, including unsuccessful ones.
+
+Score the content before opening turn metrics. For the vehicle questions, the answer must distinguish supported configurations, preserve the conditions stated in the documents, and distinguish an installed restraint from an occupied restraint. For regulatory claims, confirm the effective rule, preserve material exceptions and distinguish the second question's scope from the first. For the fixtures, check all reported calculations and intermediate claims, distinguish lack of evidence from evidence of absence, and preserve the previous user turn's relevant facts. For explicit source verification, an executed read and a link supporting the conclusion are both required. A material factual or scope error fails that observation even if the main recommendation or number happens to be useful.
+
+The first scored Flash observation on the published candidate failed Palisade. It made a blanket claim about all configurations and extended a restraint-installation observation to a general operating recommendation without establishing the configuration or conditions. This was scored before inspecting its latency. First text arrived at 65.27 s and the turn completed at 74.08 s after five Worker requests and four actual source operations. The candidate has not met the quality gate for promotion.
+
+The single broad test run on `69db25dad9` finished with 853 passing and six failing tests across 34 files. All six failures were in the chat UI file and matched the failure names recorded against the pre-experiment baseline. The agent loop and web tool suites passed. The pre-push type checks passed all five gates with one worker.
+
+The candidate's first Flash insurance turn correctly distinguished liability coverage from vehicle coverage, but cited the superseded 431-P regulation as the current rule. It failed the prewritten effective-rule check. The [published 837-P regulation](https://www.cbr.ru/queries/xsltblock/file/158093/-1/2506) supersedes it from October 2024. The turn took 50.61 s with first text at 44.60 s, five Worker requests and four source operations. This is another example where the success count alone is insufficient.
+
+A frozen replay reused the same provisional Palisade answer and qualifying public document from the URL-restricted audit trial. The revised excerpt selection and affirmative support requirement changed the verdict from ACCEPT to REVISE. The Supervisor audit itself took 0.98 s. This is evidence for detecting the error without another search. It does not show that the next Worker revision is correct. The two audit changes were evaluated together here.
+
+On the same Flash replay, the registration follow-up applied the changed insurance rule and described diagnostic-card requirements as unverified. The conflicting-units holdout correctly computed both totals but then selected one input with no evidence that resolved the conflict. It failed the supplied-premise check. The asynchronous code answer identified the missing await and gave an ordered sequential fix. The optional parallel example also changes the callback argument list, so the sequential fix is the reliable minimal answer.
+
+| Flash replay on `69db25dad9` | First text / total, s | Requests / steps / tools | Result |
+|---|---:|---:|---|
+| Registration follow-up | 55.24 / 60.70 | 5 / 5 / 3 | Corrected the obsolete insurance requirement and marked the unresolved inspection requirement. |
+| Percentage | 1.92 / 2.02 | 1 / 1 / 0 | Pass. |
+| Box count and follow-up | 1.31 / 1.74, 1.24 / 1.42 | 1 / 1 / 0 each | Pass on both turns. |
+| Conflicting units | 1.06 / 3.55 | 1 / 1 / 0 | Fail. Correct calculations, unsupported choice between inputs. |
+| Async diagnosis | 4.05 / 4.06 | 1 / 1 / 0 | Correct cause and sequential fix. |
+| Python source verification | 26.35 / 29.84 | 4 / 4 / 2 | Correct version distinction with source reads. |
+| Instruction revisions and follow-up | 1.31 / 2.18, 1.42 / 1.42 | 1 / 1 / 0 each | Pass on both turns. |
+| Weighted rates | 1.31 / 1.91 | 1 / 1 / 0 | Correct combined and intermediate values. |
+| Build and test log | 7.53 / 8.20 | 2 / 2 / 0 | Correct distinction. No external operation executed. |
