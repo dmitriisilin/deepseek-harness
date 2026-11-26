@@ -569,6 +569,7 @@ export class ReactLoopAgent implements Agent {
             sourceReadGuidance: process.env.AI_CONTROL_SOURCE_READ_GUIDANCE === '1',
             draftReview: process.env.AI_CONTROL_DRAFT_REVIEW === '1',
             progressReview: process.env.AI_CONTROL_PROGRESS_REVIEW === '1',
+            auditCounterexample: process.env.AI_CONTROL_AUDIT_COUNTEREXAMPLE === '1',
             synthesisAudit: process.env.AI_CONTROL_SYNTHESIS_AUDIT === '1',
             suppliedAudit: process.env.AI_CONTROL_SUPPLIED_AUDIT === '1',
           } } : {},

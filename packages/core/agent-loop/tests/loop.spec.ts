@@ -2287,11 +2287,19 @@ describe('parallel Supervisor integration', () => {
       execute,
     }))
     const agent = await ctx.agentLoop.create(SessionId('synthesis-audit'), { provider: 'mock', model: 'deepseek-flash' })
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+    onTestFinished(() => log.mockRestore())
     const frames: AssistantStreamFrame[] = []
     ctx.on('agent/assistant-stream', ({ frame }) => { frames.push(frame) })
     const idle = waitForIdle(ctx, agent)
     send(agent, 'Verify the conditions')
     await idle
+    const turnLog = log.mock.calls.map(([line]) => String(line)).find(line => line.includes('"event":"ai-control/turn"'))
+    expect(JSON.parse(turnLog ?? '{}').supervisor.calls).toContainEqual(expect.objectContaining({
+      kind: 'synthesis',
+      sourceCoverage: outcome === 'http-denied' ? 'discovery_only' : 'document_excerpts',
+      excerptsReviewed: outcome === 'http-denied' ? 0 : 1,
+    }))
     expect(execute).toHaveBeenCalledOnce()
     expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('A public source')
     expect(JSON.stringify(agent.session.deriveMessages())).toContain('A public source')

@@ -364,15 +364,17 @@ describe('per-turn Supervisor budget', () => {
 
   it('checks the beginning and conclusion of a long draft against relevant source sections', async () => {
     vi.stubEnv('AI_CONTROL_SYNTHESIS_AUDIT', '1')
+    vi.stubEnv('AI_CONTROL_AUDIT_COUNTEREXAMPLE', '1')
     const transport = vi.fn(async function* (_options: GenerateOptions) { yield* textResponse('REVISE') })
     const budget = new SupervisorBudget(new AbortController().signal, transport)
     try {
       const url = 'https://example.com/reference'
       budget.noteDiscoveredSourceUrls([url])
-      budget.notePublicSourceExcerpt(url, 'navigation '.repeat(1200) + 'Emergency actuator interlock requires disconnection.')
+      budget.notePublicSourceExcerpt(url, 'device configuration operation handling. '.repeat(300) + 'Emergency actuator interlock requires disconnection.')
       await budget.synthesisRevisionAdvice(
-        'Opening summary. ' + 'Background details. '.repeat(350) + 'The emergency actuator interlock can be used without disconnection.',
+        'Opening summary. ' + 'Background device configuration operation handling. '.repeat(180) + 'The emergency actuator interlock can be used without disconnection.',
       )
+      expect(transport.mock.calls[0]?.[0].system).toContain('where all supplied excerpts are true but its decisive conclusion is false')
       const payload = transport.mock.calls[0]?.[0].messages[0]?.content[0]
       const content = payload?.type === 'text' ? JSON.parse(payload.text) as { draft: string; excerpts: { url: string; excerpt: string }[] } : undefined
       expect(content?.draft).toContain('Opening summary.')

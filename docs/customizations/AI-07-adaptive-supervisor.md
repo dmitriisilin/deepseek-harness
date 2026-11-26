@@ -479,3 +479,22 @@ Both Palisade runs opened three documents. The guidance run narrowed the main an
 | Percentage | 1.19 / 1.19 | 1.46 / 1.46 | 1 / 0 / 0 → 1 / 0 / 0 |
 
 Document counts measure access, not whether a source supports the decisive claim. This pair does not justify enabling the guidance by default. It motivates measuring source authority, exact scope and direct support independently of document count.
+
+### Audit excerpt selection smoke test
+
+The excerpt selector discounts terms repeated throughout a page so a short passage containing a distinctive condition can outrank boilerplate. The retained material stays within the existing size cap. A deterministic test exercises this with a long page and checks that the condition reaches the audit. Audit diagnostics log source coverage and the count of excerpts sent, without logging the excerpts.
+
+In the isolated red profile, Flash and Opus correctly identified Python 3.7 as introducing the language guarantee for dict insertion order and CPython 3.6 as having the implementation behavior before that guarantee. The percentage control was correct in one request on both models. Flash final first text / total was 16.41 / 20.12 s for Python and 1.61 / 1.61 s for percentage. Opus was 20.79 / 24.61 s and 1.44 / 1.47 s respectively. Opus received one bounded extension and reached final synthesis.
+
+Neither model used the synthesis audit for this fixture despite reading documents, because the direct reads did not go through search discovery. The audit only sends excerpts from eligible search-discovered HTTPS URLs. This replay validates the normal source-answer paths and shows that a successful direct read is not evidence of an audit. It does not compare excerpt ranking quality under live audit.
+
+The Flash Palisade replay activated the audit through search discovery. The audit received three excerpts and returned ACCEPT in 0.83 s (4,948 input tokens). The answer acknowledged the limited set of sources in one sentence, then presented their mechanism as the general factory design and repeated an unsafe source quotation about moving between rows while the vehicle is in motion. Score it as a failed quality gate despite the ACCEPT verdict. The source count and the audit verdict are therefore insufficient proxies for quality. The remaining failure is a consequential inference that goes beyond the inspected material, even when excerpts reach the auditor.
+
+Palisade final first text / total was 79.86 / 79.87 s, with seven Worker requests and seven tools. The percentage control returned the correct answer in one Worker request, zero tools and 1.60 s total. The earlier guidance-on run used the same regression prompt but did not have an audit call. Different evidence and search paths prevent attributing the latency difference to the excerpt selector.
+
+An isolated replay enabled only the experimental audit counterexample instruction relative to the previous audit configuration. The audit again received three excerpts and returned ACCEPT. The new answer located a manufacturer manual and narrowed its discussion to the documented model year. It still asserted an upright slide in the opening while later acknowledging that the manual does not establish an unchanged backrest angle. The decisive claim therefore fails on internal consistency and evidentiary scope. The two runs found different sources, so the improved scope and use of a manual cannot be attributed to the audit instruction. Keep the variant disabled by default.
+
+| Flash case | Ordinary audit, final first text / total (s) | Counterexample audit, final first text / total (s) | Worker requests / tools |
+| --- | ---: | ---: | --- |
+| Palisade | 79.86 / 79.87 | 99.22 / 99.23 | 7 / 7 → 7 / 9 |
+| Percentage | 1.60 / 1.60 | 1.46 / 1.46 | 1 / 0 in both |

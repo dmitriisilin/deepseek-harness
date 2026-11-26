@@ -26,12 +26,18 @@ function auditExcerpt(source: string, terms: ReadonlySet<string>): string {
   if (source.length <= 3500) return source
   const header = source.slice(0, 500)
   const sections = source.slice(500).match(/[\s\S]{1,700}/g) ?? []
-  const ranked = sections.map((text, index) => {
+  const termFrequency = new Map<string, number>()
+  const sectionMatches = sections.map((text) => {
     const words = new Set(text.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu))
-    const score = [...words].filter(word => terms.has(word)).length
-    return { text, index, score }
+    const matches = [...words].filter(word => terms.has(word))
+    for (const word of matches) termFrequency.set(word, (termFrequency.get(word) ?? 0) + 1)
+    return matches
   })
-  const selected = ranked.sort((a, b) => b.score - a.score).slice(0, 4).sort((a, b) => a.index - b.index)
+  const selected = sectionMatches.map((matches, index) => ({
+    text: sections[index],
+    index,
+    score: matches.reduce((total, word) => total + 1 / (termFrequency.get(word) ?? 1), 0),
+  })).sort((a, b) => b.score - a.score).slice(0, 4).sort((a, b) => a.index - b.index)
   return [header, ...selected.map(section => section.text)].join('\n[…]\n')
 }
 
@@ -164,6 +170,8 @@ const hard = { requests: 8, steps: 7, tools: 12 }
 type Spend = { requests: number; steps: number; tools: number }
 type WorkCall = { id: string; name: string; arguments: string }
 
+type SourceAuditCoverage = 'supplied_material' | 'document_excerpts' | 'discovery_only'
+
 interface SupervisorCall {
   kind: 'initial' | 'review' | 'draft' | 'synthesis'
   durationMs: number
@@ -171,6 +179,8 @@ interface SupervisorCall {
   result: string
   inputTokens: number
   outputTokens: number
+  sourceCoverage?: SourceAuditCoverage
+  excerptsReviewed?: number
 }
 
 /** Per-turn admission. Concurrent classifier calls never own the Worker request. */
@@ -315,6 +325,8 @@ export class SupervisorBudget {
   async synthesisRevisionAdvice(draft: string, suppliedOnly = false): Promise<string | undefined> {
     const started = performance.now()
     const call = this.record('synthesis', started)
+    call.sourceCoverage = suppliedOnly ? 'supplied_material' : this.sourceExcerpts.size > 0 ? 'document_excerpts' : 'discovery_only'
+    call.excerptsReviewed = suppliedOnly ? 0 : this.sourceExcerpts.size
     const excerptTerms = new Set(`${this.task} ${draft}`.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu))
     try {
       const signal = AbortSignal.any([this.signal, AbortSignal.timeout(2500)])
@@ -332,6 +344,9 @@ export class SupervisorBudget {
             ? 'For each consequential claim, identify the statement in the supplied material that entails it. A claim remains unsupported if the material could be true while the claim is false. Accept only if every such claim is entailed or explicitly presented as unresolved.'
             : 'Choose ACCEPT only when each decisive external claim is supported by the excerpts within the conditions stated, or explicitly left unresolved.',
           'Choose REVISE when a decisive conclusion contradicts a source, omits a material condition, overstates certainty, or takes an older source as proof of a current claim.',
+          !suppliedOnly && process.env.AI_CONTROL_AUDIT_COUNTEREXAMPLE === '1'
+            ? 'Before accepting, try to construct a case within the scope of the answer where all supplied excerpts are true but its decisive conclusion is false. Check whether each condition in the excerpts is necessary or sufficient. A local caveat does not repair a broader claim elsewhere. If a counterexample is possible, request revision and name the unsupported inference or missing condition.'
+            : '',
           'The existence of a link does not establish correctness, applicability, or current validity.',
           'If discovery found links but no eligible document was read, check whether the answer clearly leaves decisive outside claims unresolved.',
           'For revisions, identify the unsupported claim or missing condition that most directly changes the answer to the user’s question.',
@@ -342,8 +357,10 @@ export class SupervisorBudget {
           content: [{ type: 'text', text: JSON.stringify({
             task: this.task, previousTask: this.previousTask,
             draft: draft.length <= 5000 ? draft : `${draft.slice(0, 3400)}\n[…]\n${draft.slice(-1500)}`,
-            sourceCoverage: suppliedOnly ? 'supplied_material' : this.sourceExcerpts.size > 0 ? 'document_excerpts' : 'discovery_only',
-            excerpts: Array.from(this.sourceExcerpts, ([url, source]) => ({ url, excerpt: auditExcerpt(source, excerptTerms) })),
+            sourceCoverage: call.sourceCoverage,
+            excerpts: suppliedOnly ? [] : Array.from(this.sourceExcerpts, ([url, source]) => ({
+              url, excerpt: auditExcerpt(source, excerptTerms),
+            })),
           }) }],
         })],
       }, call)) assembler.push(chunk)
