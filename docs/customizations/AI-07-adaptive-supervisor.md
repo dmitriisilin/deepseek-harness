@@ -602,3 +602,25 @@ The opt-in projection `AI_CONTROL_FINAL_OMIT_EXPLORATION_TEXT=1` removes ordinar
 The Flash and Opus red smoke runs completed. Flash chose a clarification path for Palisade and used no tools (31.53 / 34.76 s). Opus used seven tools and completed naturally without a separate synthesis request (38.63 / 49.39 s). Both percentage turns passed in one request (1.50 and 1.54 s total). Neither Palisade path exercised the new projection. These are route observations, not evidence of live provider compatibility with redacted mixed messages or of a quality gain.
 
 A local inspection of eight preserved run logs found 47 settled assistant messages containing tool calls and zero with accompanying nonempty text. This does not count internal reasoning blocks or hidden attempts. It shows that the proposed projection would not have changed the inspected request histories. The experimental code and its synthetic fixture were removed. The controlled difference from supplying an erroneous draft remains relevant to future synthesis designs, but the current loop already omits that draft.
+
+### Same-evidence red Worker comparison
+
+Flash and Opus received the same three captured public excerpts as user-supplied material, without search, and with the selected provider retained. The Supervisor used the reduced-effort start in both profiles (effective Flash off and Opus low). Both models answered in a single request and did not use tools.
+
+| Case | Flash, final first text / total (s) | Opus, final first text / total (s) | Content result |
+| --- | ---: | ---: | --- |
+| Captured source bundle | 1.50 / 5.52 | 6.82 / 16.25 | Flash treated the documented slide as evidence of no seatback folding. Opus left that condition unresolved in its opening and distinguished the restriction from the separate review. |
+| New prerequisite example | 1.28 / 1.84 | 0.87 / 3.28 | Both preserved the additional prerequisite for A and left B open. |
+| Arithmetic | 1.15 / 1.30 | 0.85 / 0.86 | Both correct. |
+
+This comparison attributes the difference to the Worker/provider path on this fixed input rather than to search or checkpoint behavior. The effective reasoning efforts differ, and the single observation does not isolate model identity from that difference. It is not a basis for changing the user's selected model or for promoting a Supervisor candidate.
+
+An additional paired Flash replay changed only first effort from effective off to high on the same fixed bundle and controls. High correctly left unchanged-seatback motion unconfirmed and distinguished the two mechanisms and the manufacturer restriction. It still offered an inference about seatback motion from the return instruction, which is not direct evidence of exact motion across variants. Both efforts handled the new prerequisite question and arithmetic correctly. First final text / total rose from 1.50 / 5.52 to 11.36 / 14.50 s for the source bundle and from 1.28 / 1.84 to 2.77 / 3.69 s for prerequisites. Arithmetic was 1.15 / 1.30 versus 1.20 / 1.20 s. All six observations used one request and zero tools. This isolates a useful effect of first effort on one complex evidence question. It does not establish that applying high effort to all initial requests is a good default.
+
+### First effort by input size
+
+The experimental `AI_CONTROL_FIRST_EFFORT=by-input-size` preserves selected effort when the current user text reaches 2,000 characters and otherwise keeps the reduced start. It does not await the Supervisor or inspect topic names. Five targeted cases cover the original modes, both sides of the size threshold, and normal tool authorization.
+
+In a fixed-input red Flash replay, effective effort was high for the long source bundle and off for the two short controls. The long answer again left unchanged-seatback motion unconfirmed in the opening but inferred exact motion too strongly from the return procedure. First final text / total was 14.52 / 19.19 s, versus 11.36 / 14.50 s for the earlier always-selected observation with the same effective effort. The short prerequisites and arithmetic cases were correct in 2.34 and 2.01 s, each in one request. These are stochastic observations. Input length distinguishes these inputs but has not been shown to discriminate complexity, especially a short request that needs sourcing. This trial does not justify making it the default.
+
+The size heuristic was removed after the replay. The meaningful contrast was effort on fixed evidence, not the arbitrary text-length boundary. Short questions can require verification, and large inputs can ask a trivial question. Remaining tests should separate explicit evidence work from complexity inferred by length.
