@@ -412,3 +412,5 @@ Both Python responses passed the language-version criterion. The filtered respon
 | Registration follow-up | 59.43 / 65.75, 5 requests, 3 tools | 41.69 / 45.20, 5 requests, 3 tools |
 | Arithmetic | 1.65 / 1.66, 1 requests, 0 tools | 1.55 / 1.55, 1 requests, 0 tools |
 | Python primary source | 48.38 / 52.04, 4 requests, 2 tools | 37.85 / 41.80, 5 requests, 4 tools |
+
+The progress-aware checkpoint now receives the same bounded previous user message used in initial classification (up to 900 characters). A follow-up can refer to an entity or constraint in that message. The checkpoint receives no previous assistant answer or raw tool arguments from this change. The deterministic payload test verifies both the presence of the previous user constraint and the absence of raw tool arguments.

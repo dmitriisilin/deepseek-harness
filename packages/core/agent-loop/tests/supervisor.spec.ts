@@ -216,7 +216,7 @@ describe('per-turn Supervisor budget', () => {
     const done = { id: 'a', name: 'lookup', arguments: '{"query":"local-only-value"}' }
     const failed = { id: 'b', name: 'lookup', arguments: '{"query":"another-local-value"}' }
     try {
-      budget.start([user], undefined)
+      budget.start([user], { ...user, content: [{ type: 'text', text: 'Prior user constraints' }] })
       await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
       budget.noteSuccessfulOperations([done, failed], new Set([done.id]))
       budget.notePublicSourceExcerpt('https://example.com/empty', '  ')
@@ -225,6 +225,7 @@ describe('per-turn Supervisor budget', () => {
       await expect(budget.allow({ ...spend, steps: 4 }, 'One result', undefined, [done, failed])).resolves.toBe(false)
       const request = JSON.stringify(transport.mock.calls[1]?.[0].messages)
       expect(request).toContain('repeatsSuccessfulOperation')
+      expect(request).toContain('Prior user constraints')
       const review = transport.mock.calls[1]?.[0].messages[0]?.content[0]
       expect(review?.type === 'text' && JSON.parse(review.text).sourceProgress).toEqual({ hasDiscovery: false, documentsRead: 1 })
       expect(review?.type === 'text' && JSON.parse(review.text).nextOperations).toEqual([

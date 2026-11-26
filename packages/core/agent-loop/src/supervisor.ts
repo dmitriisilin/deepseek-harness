@@ -441,6 +441,7 @@ export class SupervisorBudget {
             type: 'text',
             text: JSON.stringify({
               task: this.task,
+              previousTask: this.progressReview ? this.previousTask : undefined,
               progress: progress.slice(-1200),
               spend,
               successfulTools: this.successfulTools,
