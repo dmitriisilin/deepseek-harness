@@ -118,6 +118,20 @@ describe('per-turn Supervisor budget', () => {
     }
   })
 
+  it('keeps a user-requested supplied-material boundary when the Worker asks for sources', async () => {
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse('SUPPLIED_ONLY')
+    })
+    try {
+      budget.start([user], undefined)
+      await expect(budget.firstAnswerChecks(true)).resolves.toEqual({ sources: false, audit: false })
+      await expect(budget.allow(spend, 'Worker proposed an external lookup', 'needs_sources')).resolves.toBe(false)
+      expect(budget.reason).toBe('supplied_only')
+    } finally {
+      budget.close()
+    }
+  })
+
   it('allows source verification after the draft identifies a material gap despite initial ambiguity', async () => {
     const responses = ['UNCLEAR', 'VERIFY']
     const budget = new SupervisorBudget(new AbortController().signal, async function* () {
@@ -268,6 +282,25 @@ describe('per-turn Supervisor budget', () => {
       await expect(budget.synthesisNeedsRevision('Universal statement')).resolves.toBe(true)
       const payload = transport.mock.calls[1]?.[0].messages[0]?.content[0]
       expect(payload?.type === 'text' && JSON.parse(payload.text).excerpts).toEqual(['Documented conditions'])
+    } finally {
+      budget.close()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('includes matching evidence beyond the header of a long source', async () => {
+    vi.stubEnv('AI_CONTROL_SYNTHESIS_AUDIT', '1')
+    const transport = vi.fn(async function* (_options: GenerateOptions) { yield* textResponse('REVISE') })
+    const budget = new SupervisorBudget(new AbortController().signal, transport)
+    try {
+      const url = 'https://example.com/reference'
+      budget.noteDiscoveredSourceUrls([url])
+      budget.notePublicSourceExcerpt(url, 'navigation '.repeat(1200) + 'Emergency actuator interlock requires disconnection.')
+      await budget.synthesisNeedsRevision('The emergency actuator interlock can be used without disconnection.')
+      const payload = transport.mock.calls[0]?.[0].messages[0]?.content[0]
+      const [excerpt] = payload?.type === 'text' ? JSON.parse(payload.text).excerpts as string[] : []
+      expect(excerpt).toContain('Emergency actuator interlock requires disconnection.')
+      expect(excerpt?.length).toBeLessThan(3500)
     } finally {
       budget.close()
       vi.unstubAllEnvs()

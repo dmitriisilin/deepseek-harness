@@ -128,6 +128,8 @@ const quickPrompt = [
 
 const neutralQuickPrompt = [
   'Give a concise direct answer when the information already available supports the main conclusion.',
+  'Check every intermediate claim you include against its inputs. Leave out assertions that do not help answer the request.',
+  'If the user asks you to use only supplied material, preserve its distinctions and conditions and keep the answer within that material.',
   'Before answering, ask whether a missing or unverified assumption could materially change that conclusion.',
   'If you can resolve that gap using another operation, call request_continuation with the appropriate reason.',
   'If progress depends on something only the user can supply, ask one focused question or give a clearly conditional answer.',
@@ -642,13 +644,18 @@ export class ReactLoopAgent implements Agent {
         }
       }
       if (firstAttempt && final) {
+        let advice = 'Give the useful answer first, then brief supporting evidence. State what is missing or unverified.'
+        if (supervisor?.reason === 'supplied_only') {
+          advice = 'Use only the material supplied by the user. Identify limits or ambiguities within it without adding external facts.'
+        } else if (supervisor?.reason === 'clarify' || supervisor?.reason === 'ambiguous_input') {
+          advice = 'Ask one concise question if the available information is insufficient.'
+        } else if (evidencePolicy && supervisor?.continuation === 'needs_sources') {
+          advice = 'Lead with the best supported conclusion and the scope that makes it true. Cite the evidence for decisive claims.'
+            + ' If sources disagree or do not cover the requested case, distinguish the documented cases and state what remains unresolved.'
+        }
         const instruction = [
           'This is the final response. No tools are available. Never print commands as tool calls or invent inspection results.',
-          supervisor?.reason === 'clarify' || supervisor?.reason === 'ambiguous_input'
-            ? 'Ask one concise question if the available information is insufficient.'
-            : evidencePolicy && supervisor?.continuation === 'needs_sources'
-              ? 'Lead with the best supported conclusion and the scope that makes it true. Cite the evidence for decisive claims. If sources disagree or do not cover the requested case, distinguish the documented cases and state what remains unresolved.'
-              : 'Give the useful answer first, then brief supporting evidence. State what is missing or unverified.',
+          advice,
         ].join(' ')
         this.session.append('user/message', createUserMessage({
           source: { kind: 'runtime-context', form: 'instructions' }, content: [{ type: 'text', text: instruction }],
@@ -798,7 +805,7 @@ export class ReactLoopAgent implements Agent {
           live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
           const call = message.content.find(block => block.type === 'tool-call' && block.name === continuationTool.name)
           const requested = call?.type === 'tool-call' ? continuationReason(call.arguments) : undefined
-          const reason = requested ?? (evidenceGate && call ? await supervisor.recoverContinuation() : undefined)
+          const reason = requested ?? (evidenceGate ? await supervisor.recoverContinuation() : undefined)
           setProgress(reason ? `Worker requested continuation: ${reason}` : 'Invalid continuation request')
           if (diagnostics) diagnostics.continuation = reason ?? 'invalid'
           if (reason === undefined) supervisor.finish('invalid_continuation')

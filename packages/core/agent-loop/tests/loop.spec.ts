@@ -2050,6 +2050,31 @@ describe('parallel Supervisor integration', () => {
     expect(agent.session.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
   })
 
+  it('recovers a first-step attempt to invoke an undeclared tool without dispatching it', async () => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: '{"decision":"SOURCES"}' } }] })))
+    const adapter = new MockAdapter([
+      toolCallResponse('undeclared', 'web_fetch', {}),
+      toolCallResponse('admitted', 'web_fetch', {}),
+      textResponse('Verified from source'),
+    ])
+    const ctx = await harness(adapter)
+    const execute = vi.fn(async () => [{ type: 'text' as const, text: 'Source' }])
+    ctx.tools.register(defineContentToolFixture({ name: 'web_fetch', description: '', parameters: {}, execute }))
+    const agent = await ctx.agentLoop.create(SessionId('recovered-undeclared-tool'), { provider: 'mock', model: 'deepseek-flash' })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Verify this in an external source')
+    await idle
+    expect(execute).toHaveBeenCalledOnce()
+    expect(adapter.requests.map(request => request.tools?.map(tool => tool.name))).toEqual([
+      ['request_continuation'], ['web_fetch'], ['web_fetch'],
+    ])
+    expect(agent.session.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
+  })
+
   it.each(['ACTION', 'DIRECT', 'error'])('gates an entire tool batch on %s', async (outcome) => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')

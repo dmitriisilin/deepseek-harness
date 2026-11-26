@@ -4,6 +4,7 @@ import type { UserMessage } from '@deepseek-ai/dsh-session'
 
 const decisions = {
   self_contained: { route: 'direct', reason: 'self_contained' },
+  supplied_only: { route: 'direct', reason: 'supplied_only' },
   direct: { route: 'direct', reason: 'general_question' },
   deep: { route: 'deep', reason: 'complex_reasoning' },
   standard: { route: 'standard', reason: 'standard_unspecified' },
@@ -19,6 +20,19 @@ export type Decision = (typeof decisions)[keyof typeof decisions] | {
 
 function boundedText(message: UserMessage): string {
   return message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n').slice(0, 3000)
+}
+
+function auditExcerpt(source: string, terms: ReadonlySet<string>): string {
+  if (source.length <= 3500) return source
+  const header = source.slice(0, 500)
+  const sections = source.slice(500).match(/[\s\S]{1,700}/g) ?? []
+  const ranked = sections.map((text, index) => {
+    const words = new Set(text.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu))
+    const score = [...words].filter(word => terms.has(word)).length
+    return { text, index, score }
+  })
+  const selected = ranked.sort((a, b) => b.score - a.score).slice(0, 4).sort((a, b) => a.index - b.index)
+  return [header, ...selected.map(section => section.text)].join('\n[…]\n')
 }
 
 /** Classify a human turn without giving the auxiliary model tools or attachment data. */
@@ -49,6 +63,7 @@ export async function superviseTurn(
         ...(process.env.AI_CONTROL_FIRST_EVIDENCE_GATE === '1' ? [
           'Interpret the current request using the preceding user message, resolving references where the context suffices.',
           'First ask what would have to be true in order for the practical conclusion to be correct.',
+          'SUPPLIED_ONLY: The user explicitly restricts the answer to material in the request or conversation. That scope takes precedence over a possible outside lookup.',
           'SOURCES: A decisive premise is external to the supplied information and might differ with time, place, version, entity or circumstances. Explicit requests to verify belong here. This takes priority over DIRECT or SELF_CONTAINED.',
           'SELF_CONTAINED: A calculation, formal deduction or transformation using only supplied premises. Use it only when no outside fact is necessary to determine the answer.',
           'A previous message can identify the subject without supplying the facts needed to answer. A short follow-up inherits the relevant constraints of that subject.',
@@ -196,7 +211,7 @@ export class SupervisorBudget {
   async firstAnswerChecks(audit: boolean): Promise<{ sources: boolean; audit: boolean }> {
     const decision = await this.initial
     this.signal.throwIfAborted()
-    return { sources: decision?.reason === 'needs_sources', audit: audit && decision?.reason !== 'self_contained' }
+    return { sources: decision?.reason === 'needs_sources', audit: audit && decision?.reason !== 'self_contained' && decision?.reason !== 'supplied_only' }
   }
 
   async recoverContinuation(): Promise<ContinuationReason | undefined> {
@@ -256,7 +271,7 @@ export class SupervisorBudget {
   notePublicSourceExcerpt(url: string, text: string): void {
     const normalized = URL.parse(url)?.href
     if (!normalized || !this.discoveredSourceUrls.has(normalized) || this.sourceExcerpts.length >= 3 || !text.trim()) return
-    this.sourceExcerpts.push(text.slice(0, 3500))
+    this.sourceExcerpts.push(text.slice(0, 50000))
   }
 
   canAuditSynthesis(spend: Spend): boolean {
@@ -267,6 +282,7 @@ export class SupervisorBudget {
   async synthesisNeedsRevision(draft: string): Promise<boolean> {
     const started = performance.now()
     const call = this.record('synthesis', started)
+    const excerptTerms = new Set(`${this.task} ${draft}`.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu))
     try {
       const signal = AbortSignal.any([this.signal, AbortSignal.timeout(2500)])
       const assembler = new BlockAssembler()
@@ -277,7 +293,7 @@ export class SupervisorBudget {
           source: { kind: 'user' },
           content: [{ type: 'text', text: JSON.stringify({
             task: this.task, previousTask: this.previousTask,
-            draft: draft.slice(0, 5000), excerpts: this.sourceExcerpts,
+            draft: draft.slice(0, 5000), excerpts: this.sourceExcerpts.map(source => auditExcerpt(source, excerptTerms)),
           }) }],
         })],
       }, call)) assembler.push(chunk)
@@ -322,6 +338,7 @@ export class SupervisorBudget {
       const groundedFollowup = this.previousTask !== undefined && continuation !== undefined
         && process.env.AI_CONTROL_FIRST_EVIDENCE_GATE === '1'
       const verifiedDraft = continuation === 'needs_sources' && this.draftRequiresSources
+      if (decision?.reason === 'supplied_only') return this.finish('supplied_only')
       if ((decision?.reason === 'ambiguous_input' && !groundedFollowup && !verifiedDraft)
         || (continuation === undefined && (decision?.route === 'direct' || decision?.route === 'deep'))) {
         return this.finish(decision.reason)
