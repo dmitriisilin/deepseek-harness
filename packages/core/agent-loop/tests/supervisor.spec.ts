@@ -282,6 +282,9 @@ describe('per-turn Supervisor budget', () => {
       await expect(budget.synthesisRevisionAdvice('Universal statement')).resolves.toBe('The excerpt limits this operation.')
       const payload = transport.mock.calls[1]?.[0].messages[0]?.content[0]
       expect(payload?.type === 'text' && JSON.parse(payload.text).excerpts).toEqual(['Documented conditions'])
+      await expect(budget.allow({ requests: 7, steps: 6, tools: 2 }, 'Another exploratory request')).resolves.toBe(false)
+      expect(budget.reason).toBe('synthesis_reserved')
+      expect(budget.canAuditSynthesis({ requests: 8, steps: 6, tools: 2 })).toBe(true)
     } finally {
       budget.close()
       vi.unstubAllEnvs()

@@ -2197,7 +2197,12 @@ describe('parallel Supervisor integration', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it.each(['success', 'empty', 'error'] as const)('settles a provisional synthesis after one revision attempt (%s)', async (outcome) => {
+  it.each([
+    { outcome: 'success', natural: false },
+    { outcome: 'success', natural: true },
+    { outcome: 'empty', natural: false },
+    { outcome: 'error', natural: false },
+  ] as const)('settles a provisional synthesis after one revision attempt ($outcome, natural: $natural)', async ({ outcome, natural }) => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
     vi.stubEnv('AI_CONTROL_SYNTHESIS_AUDIT', '1')
@@ -2206,7 +2211,7 @@ describe('parallel Supervisor integration', () => {
     vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
     const responses = [
       { decision: 'SOURCES' },
-      { decision: 'FINISH' },
+      ...natural ? [] : [{ decision: 'FINISH' }],
       { decision: 'REVISE', observation: 'The document only covers one version.' },
     ]
     const supervisorFetch = vi.fn(async () => Response.json({
@@ -2217,7 +2222,7 @@ describe('parallel Supervisor integration', () => {
       toolCallResponse('control', 'request_continuation', { reason: 'needs_sources' }),
       toolCallResponse('discover', 'web_search', {}),
       toolCallResponse('read', 'web_fetch', {}),
-      toolCallResponse('excess', 'web_fetch', {}),
+      ...natural ? [] : [toolCallResponse('excess', 'web_fetch', {})],
       textResponse('Unsupported universal conclusion'),
       outcome === 'error' ? [{ type: 'finish', reason: { kind: 'error', failure: { message: 'offline', code: 'SERVER' } } }]
         : textResponse(outcome === 'empty' ? '' : 'Conclusion limited to the documented case'),
@@ -2249,9 +2254,9 @@ describe('parallel Supervisor integration', () => {
     const idle = waitForIdle(ctx, agent)
     send(agent, 'Verify the conditions')
     await idle
-    expect(supervisorFetch).toHaveBeenCalledTimes(3)
+    expect(supervisorFetch).toHaveBeenCalledTimes(natural ? 2 : 3)
     expect(execute).toHaveBeenCalledOnce()
-    expect(adapter.requests).toHaveLength(6)
+    expect(adapter.requests).toHaveLength(natural ? 5 : 6)
     expect(adapter.requests.at(-1)?.tools ?? []).toEqual([])
     const revisionMessages = JSON.stringify(adapter.requests.at(-1)?.messages)
     expect(revisionMessages).toContain('provisional synthesis was flagged')

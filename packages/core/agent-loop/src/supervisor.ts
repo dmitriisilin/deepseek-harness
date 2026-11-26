@@ -283,9 +283,13 @@ export class SupervisorBudget {
     this.sourceExcerpts.push(text.slice(0, 50000))
   }
 
-  canAuditSynthesis(spend: Spend): boolean {
+  private hasAuditEvidence(): boolean {
     return process.env.AI_CONTROL_SYNTHESIS_AUDIT === '1' && this.continuation === 'needs_sources'
-      && this.sourceExcerpts.length > 0 && !this.hardLimitExceeded(spend)
+      && this.sourceExcerpts.length > 0
+  }
+
+  canAuditSynthesis(spend: Spend): boolean {
+    return this.hasAuditEvidence() && !this.hardLimitExceeded(spend)
   }
 
   async synthesisRevisionAdvice(draft: string): Promise<string | undefined> {
@@ -350,6 +354,9 @@ export class SupervisorBudget {
     this.signal.throwIfAborted()
     if (this.final) return false
     if (this.hardLimitExceeded(spend)) return this.finish('hard_limit')
+    if (this.hasAuditEvidence() && (spend.requests >= hard.requests - 1 || spend.steps >= hard.steps)) {
+      return this.finish('synthesis_reserved')
+    }
     if (!this.limit) {
       const decision = await this.initial
       this.signal.throwIfAborted()

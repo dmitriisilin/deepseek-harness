@@ -605,7 +605,7 @@ export class ReactLoopAgent implements Agent {
     const tools = quick ? [continuationTool] : assembly.tools
     let firstAttempt = true
     let provisionalSynthesis: ReturnType<typeof createAssistantMessage> | undefined
-    const auditSynthesis = final && evidencePolicy && supervisor.canAuditSynthesis({
+    const auditSynthesis = evidencePolicy && supervisor.canAuditSynthesis({
       requests: (diagnostics?.requests ?? 0) + 2, steps: step, tools: diagnostics?.tools ?? 0,
     })
     const warnUnrevised = (message: ReturnType<typeof createAssistantMessage>) => createAssistantMessage({
@@ -667,7 +667,8 @@ export class ReactLoopAgent implements Agent {
       }
       firstAttempt = false
       const request = this.buildRequest(
-        config, preparedCall, tools, { turn, step }, startsRequestSeries, signal,
+        config, preparedCall, provisionalSynthesis ? [] : tools, { turn, step },
+        startsRequestSeries || provisionalSynthesis !== undefined, signal,
         light ? decision.selection.reasoningEffort ?? null : undefined,
       )
       const live = new AssistantStreamAttempt(
@@ -825,7 +826,7 @@ export class ReactLoopAgent implements Agent {
             progress, 'needs_sources')
           return null
         }
-        const synthesis = auditSynthesis && !provisionalSynthesis
+        const synthesis = auditSynthesis && !provisionalSynthesis && !message.content.some(block => block.type === 'tool-call')
           ? message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ').trim()
           : ''
         const revisionAdvice = synthesis && finish.kind !== 'max-tokens'
@@ -834,6 +835,7 @@ export class ReactLoopAgent implements Agent {
         if (revisionAdvice) {
           live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
           provisionalSynthesis = message
+          if (!final) supervisor?.finish('synthesis_revision')
           this.session.append('user/message', createUserMessage({
             source: { kind: 'runtime-context', form: 'instructions' },
             content: [{ type: 'text', text: [
@@ -867,7 +869,7 @@ export class ReactLoopAgent implements Agent {
         if (toolCalls.length === 0) return { kind: 'completed' }
         const progress = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ').slice(-1200)
         setProgress(`${progress} Tools requested: ${toolCalls.map(block => block.name).join(', ')}`)
-        if (supervisor && diagnostics && (final || !await supervisor.allow({
+        if (supervisor && diagnostics && (final || provisionalSynthesis || !await supervisor.allow({
           requests: diagnostics.requests + 1, steps: step + 1, tools: diagnostics.tools + toolCalls.length,
         }, progress, undefined, toolCalls))) {
           for (const block of toolCalls) {
@@ -879,7 +881,7 @@ export class ReactLoopAgent implements Agent {
               }),
             }, { surfaceOp: 'append', sourceEventSeqs: [seq] })
           }
-          return final ? { kind: 'completed' } : null
+          return final || provisionalSynthesis ? { kind: 'completed' } : null
         }
         const toolsStarted = performance.now()
         if (diagnostics) diagnostics.tools += toolCalls.length
