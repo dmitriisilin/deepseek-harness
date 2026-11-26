@@ -247,3 +247,10 @@ On the same Flash replay, the registration follow-up applied the changed insuran
 | Instruction revisions and follow-up | 1.31 / 2.18, 1.42 / 1.42 | 1 / 1 / 0 each | Pass on both turns. |
 | Weighted rates | 1.31 / 1.91 | 1 / 1 / 0 | Correct combined and intermediate values. |
 | Build and test log | 7.53 / 8.20 | 2 / 2 / 0 | Correct distinction. No external operation executed. |
+
+| Opus replay on `69db25dad9` | First text / total, s | Requests / steps / tools | Result |
+|---|---:|---:|---|
+| Palisade | 31.45 / 42.94 | 5 / 5 / 3 | More careful than Flash about the incomplete manual read. It did not carry the no-occupant condition into a table covering two occupied restraints, so the operational guidance fails the scope check. |
+| Percentage | 1.55 / 2.13 | 1 / 1 / 0 | Pass. |
+| Box count and follow-up | 1.13 / 1.41, 0.86 / 1.27 | 1 / 1 / 0 each | Pass on both turns. |
+| Python source verification | 22.79 / 26.79 | 4 / 4 / 3 | Pass. Distinguished the language contract and implementation and reported the truncated read. |
