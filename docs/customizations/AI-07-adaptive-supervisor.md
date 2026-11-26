@@ -126,3 +126,56 @@ Set `AI_CONTROL_FIRST_RESPONSE_HINT=1` and `AI_CONTROL_SUPERVISOR=0` in an isola
 In an isolated Chrome replay on Flash with the same normal model settings, the Palisade question with the hint gave first text at 141.54 s and completed at 149.49 s (11 steps, 18 tool calls). It distinguished generations and included links. The no-hint control was still exploring when the test observer closed at 125.40 s (6 steps, 10 tool calls). Therefore this comparison provides no estimate of the speedup. The earlier budgeted policy had three completed runs in 33.48–41.06 s, with different permissions and starting effort. The hint alone did not reliably prevent extended exploration.
 
 In the same hint-only replay the two vehicle follow-ups took 60.54 and 63.10 s (5 and 4 steps). The no-hint replay of that pair in a separate isolated session took 45.33 and 25.80 s (3 and 2 steps). These are observations from individual samples, not a latency distribution.
+
+## Quality-first evaluation
+
+Evaluate distinct changes separately. The first-request trial changes effort selection only. A separate review trial changes how the loop judges whether another operation would resolve an important gap. Holdout questions are chosen before policy changes and used for the final comparison. Production prompts must not mention the benchmark questions.
+
+Score answers before inspecting timings. Check the decisive factual claims, coverage of the original question, preservation of prior-turn context, source support and material qualifications. A decisive factual error fails the scenario even when the answer is short, fast or includes links. Record first useful text separately from the first streamed fragment wherever the sample allows it. Admit additional operations by count and purpose. Never cancel a running Worker operation to meet a latency target.
+
+The independent evidence check is a separate experiment. When it detects that a conclusion depends on missing external facts, it withholds the first draft and admits a scoped verification step. It drains the first request without cancellation. A direct answer is released after the classifier has cleared the check or failed within its own deadline. The initial classifier and the budget review do not receive the draft or raw tool arguments. The review experiment supplies only the names of proposed tools and whether the same operation already succeeded, alongside the existing progress summary and result counts.
+
+The frozen validation set is [AI-07-quality-holdout.json](AI-07-quality-holdout.json). It covers trivial output, two-turn revision, conflicting premises, asynchronous code diagnosis and primary-source verification. It is evaluation input only.
+
+An additional trial audits the actual draft when the request classifier alone clears it. This adds one bounded Supervisor call for a direct draft, and the accepted answer appears on settlement. The audit uses the clipped current question, preceding user turn when present, and draft, sent to the existing dedicated Supervisor endpoint and excluded from turn diagnostics. A verification decision hides the draft and opens the ordinary scoped source path. An unavailable audit releases the Worker answer. A Worker continuation goes through its ordinary admission without a draft audit. This is an opt-in comparison until the measured quality and latency justify changing the default.
+
+### Experimental controls
+
+The comparisons used independent switches for first effort (`AI_CONTROL_FIRST_EFFORT=selected`), neutral first guidance (`AI_CONTROL_FIRST_GUIDANCE=neutral`), progress-aware review (`AI_CONTROL_PROGRESS_REVIEW=1`), independent classification of missing evidence (`AI_CONTROL_FIRST_EVIDENCE_GATE=1`) and audit of a completed direct draft (`AI_CONTROL_DRAFT_REVIEW=1`). The experiments ran with identical tool permissions. None of these switches changes the green services.
+
+When a known follow-up has prior context and the Worker proposes a route for verification, the evidence policy allows bounded work despite an ambiguous initial label. If the classifier is unavailable and the Worker explicitly requested sources, the fallback grant leaves space for one bounded tool batch and a response. A failed, timed-out or invalid audit alone cannot prevent a direct answer. These rules concern admission, and add no Worker deadlines.
+
+### Chrome replay observations
+
+Flash in isolated red profiles. Each cell gives first text / completion in seconds and model requests / executed tools. Timings describe individual runs. For a buffered draft, first text is recorded when the accepted answer becomes visible.
+
+| Regression | Policy 7 baseline | Evidence gate and draft audit, repeated | Quality finding |
+|---|---|---|---|
+| Palisade seating | 27.75 / 32.97 · 4 / 1 | 82.40 / 89.37 · 4 / 1 | Both generalize beyond the verified configuration. A source lookup does not make the recommendation reliable. |
+| Insurance | 1.21 / 5.11 · 1 / 0 | 24.66 / 30.06 · 4 / 1 | The baseline mixed liability and property coverage. The audit run distinguished them. The extra time and tool use do not establish a consistent gain across the other cases. |
+| Registration follow-up | 1.13 / 4.49 · 1 / 0 | 25.54 / 28.30 · 3 / 0 | The baseline included an overbroad statement about vehicle condition. The audit run requested evidence but executed no source lookup on this repetition. |
+
+Preserving the selected effort alone took 61.2, 28.2, and 20.4 seconds respectively and did not resolve the factual mistakes. The progress review alone took 72.8 seconds on Palisade and still permitted an overbroad conclusion. Neutral first guidance alone took about 47 seconds for Palisade and did not yield source lookups for the two vehicle follow-ups. None of these samples justifies a rollout.
+
+Reference checks for scoring include the [Hyundai recall and its affected configurations](https://owners.hyundaiusa.com/us/en/resources/general-information/recall-296-information-and-implementation), the [prosecutor's explanation of the registration rule change](https://epp.genproc.gov.ru/ru/proc_glskfoyufo/activity/legal-education/explain/social-rights/e2098512/) and the [Python language reference on dictionaries](https://docs.python.org/3/reference/datamodel.html#dictionaries).
+
+### Held-out Chrome replay
+
+After passing the previous user turn to the draft audit, the two-turn calculation completed with 64 and 63 on both providers, with one Worker request and zero tools for each turn. Before that fix the audit sent the follow-up to a verification step despite the answer being computable from the supplied numbers.
+
+| Held-out question | Flash baseline first text / total | Flash with gate, draft audit and progress review | Source and content check |
+|---|---:|---:|---|
+| Simple percentage | 1.44 / 1.58 s | 2.54 / 2.55 s | Both returned 30. |
+| Box count | 0.95 / 1.32 s | 2.23 / 2.24 s | Both returned 64. |
+| Box count follow-up | 0.71 / 0.97 s | 2.06 / 2.07 s | Both applied the change to one box and returned 63. |
+| Conflicting units | 1.24 / 4.04 s | 4.51 / 4.52 s | Both computed 12 and 288 under separate premises. |
+| Asynchronous JavaScript | 1.39 / 3.57 s | 4.34 / 4.35 s | Both identified the missing await and described the ordered fix. |
+| Python dictionary order | 21.35 / 24.57 s | 22.86 / 25.82 s | Both distinguished Python 3.7 from CPython 3.6 and ran two source operations. |
+
+This holdout gives no evidence for auditing every short draft. On Flash the median over the three arithmetic turns went from 0.95 to 2.23 s before first text. The draft audit should remain an experimental setting until a narrower admission policy demonstrates useful quality gains without a systematic penalty on simple turns.
+
+### Selective audit and source admission
+
+The initial classifier may mark a task self-contained when its answer can be derived entirely from the supplied material. That label permits ordinary streamed text without a second Supervisor call. The first-text medians for the three Flash arithmetic turns were 0.95 s on baseline, 2.23 s with universal draft audit and 1.49 s with selective audit. All three modes retained the expected answers. The selective Opus replay also preserved those answers in one request per turn and completed the Python reference question in 19.90 s with two executed source operations.
+
+The selective Flash replay answered the Python question correctly but requested three parallel document reads after the classifier returned invalid output. The fallback allowed two tools and the review declined the batch, so none of its cited documents was read. The source fallback now admits up to three tools in its first batch. With progress review enabled, a discovery search that returns source links can also reserve one batch of up to two previously unread documents before final synthesis, within the existing hard limits. Failed and empty search outcomes do not qualify. The normal execution permission check still applies. Turn diagnostics record the active experimental switches and whether the reserve was used.

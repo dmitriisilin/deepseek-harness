@@ -2005,7 +2005,14 @@ describe('parallel Supervisor integration', () => {
     expect(adapter.requests[0]?.model).toBe(model)
   })
 
-  it.each([false, true])('runs an admitted continuation with normal permissions (denied: %s)', async (denied) => {
+  it.each([
+    { denied: false, firstEffort: 'low' },
+    { denied: true, firstEffort: 'low' },
+    { denied: false, firstEffort: 'selected' },
+  ])('runs an admitted continuation with normal permissions and first effort $firstEffort (denied: $denied)', async ({
+    denied, firstEffort,
+  }) => {
+    vi.stubEnv('AI_CONTROL_FIRST_EFFORT', firstEffort)
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
     onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
@@ -2030,7 +2037,7 @@ describe('parallel Supervisor integration', () => {
     const idle = waitForIdle(ctx, agent)
     send(agent, 'Find the official source')
     await idle
-    expect(adapter.requests.map(request => request.reasoningEffort)).toEqual(['low', 'high', 'high'])
+    expect(adapter.requests.map(request => request.reasoningEffort)).toEqual([firstEffort === 'selected' ? 'high' : 'low', 'high', 'high'])
     expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toEqual(['request_continuation'])
     expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toEqual(['web_search'])
     expect(execute).toHaveBeenCalledTimes(denied ? 0 : 1)
@@ -2086,6 +2093,60 @@ describe('parallel Supervisor integration', () => {
     await idle
     expect(adapter.requests).toHaveLength(3)
     expect(adapter.requests[2]?.tools ?? []).toEqual([])
+  })
+
+  it.each([false, true])('keeps an unsupported first draft out of the chat (draft audit: %s)', async (audit) => {
+    vi.stubEnv('AI_CONTROL_DRAFT_REVIEW', audit ? '1' : '0')
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    const decisions = audit ? ['DIRECT', 'VERIFY'] : ['SOURCES']
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      choices: [{ message: { content: JSON.stringify({ decision: decisions.shift() ?? 'FINISH' }) } }],
+    })))
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const adapter = new MockAdapter([
+      textResponse('Unsupported claim'),
+      toolCallResponse('test-source', 'web_search', {}),
+      textResponse('Verified with source'),
+    ])
+    const ctx = await harness(adapter)
+    ctx.tools.register(defineContentToolFixture({
+      name: 'web_search', description: 'Find evidence', parameters: {},
+      execute: async () => [{ type: 'text', text: 'source evidence' }],
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('evidence-gate'), { provider: 'mock', model: 'deepseek-flash' })
+    const frames: AssistantStreamFrame[] = []
+    ctx.on('agent/assistant-stream', ({ frame }) => { frames.push(frame) })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Confirm the rule from a source')
+    await idle
+    expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toEqual(['web_search'])
+    expect(JSON.stringify(adapter.requests[1]?.messages)).not.toContain('Unsupported claim')
+    expect(JSON.stringify(frames)).not.toContain('Unsupported claim')
+    const answers = agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(JSON.stringify(answers)).toContain('Verified with source')
+  })
+
+  it.each(['accept', 'unavailable'])('releases the Worker answer after evidence review: %s', async (review) => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
+    vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
+    vi.stubEnv('AI_CONTROL_DRAFT_REVIEW', '1')
+    vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
+    const decisions = ['DIRECT', 'ACCEPT']
+    vi.stubGlobal('fetch', vi.fn(async () => review === 'unavailable'
+      ? new Response(null, { status: 503 })
+      : Response.json({ choices: [{ message: { content: JSON.stringify({ decision: decisions.shift() }) } }] })))
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const adapter = new MockAdapter([textResponse('Available answer')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('evidence-unavailable'), { provider: 'mock', model: 'deepseek-flash' })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Give an answer')
+    await idle
+    expect(adapter.requests).toHaveLength(1)
+    const answers = agent.session.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(JSON.stringify(answers)).toContain('Available answer')
   })
 
   it('adds the lightweight hint only to the first request with regular tools and no Supervisor', async () => {

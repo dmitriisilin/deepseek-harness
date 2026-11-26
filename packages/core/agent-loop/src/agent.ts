@@ -73,6 +73,7 @@ interface TurnDiagnostics {
   supervisor?: {
     calls: Omit<SupervisorBudget['calls'][number], 'started'>[]
     extensions: number
+    sourceOpeningReserved: boolean
     successfulTools: number
     failedTools: number
     reason?: string | undefined
@@ -123,6 +124,22 @@ const quickPrompt = [
   'For project files or configuration use needs_action. For public documentation use needs_sources.',
   'For product comparisons that vary by version, market, or year, use needs_sources when evidence is missing.',
   'Invoke the declared function through the tool interface. Never print tool syntax in your answer.',
+].join(' ')
+
+const neutralQuickPrompt = [
+  'Give a concise direct answer when the information already available supports the main conclusion.',
+  'Before answering, ask whether a missing or unverified assumption could materially change that conclusion.',
+  'If you can resolve that gap using another operation, call request_continuation with the appropriate reason.',
+  'If progress depends on something only the user can supply, ask one focused question or give a clearly conditional answer.',
+  'Invoke the declared function through the tool interface. Never print tool syntax in your answer.',
+].join(' ')
+
+const evidenceResponsePrompt = [
+  'Separate what the available evidence supports from assumptions and unresolved points.',
+  'A successful lookup does not establish a claim unless its result supports that claim.',
+  'If results are empty, conflicting, or inaccessible, state the remaining uncertainty and give useful conditional guidance.',
+  'Attach the relevant source to each decisive external claim when a source is available.',
+  'Keep claims within the scope of what you verified. State what would need to be checked before applying a conclusion outside that scope.',
 ].join(' ')
 
 /** Remove adapter-derived values before plugins propose the next request config. */
@@ -516,6 +533,7 @@ export class ReactLoopAgent implements Agent {
         if (supervisor) diagnostics.supervisor = {
           calls: supervisor.calls.map(({ started: _started, ...call }) => call),
           extensions: supervisor.extensions,
+          sourceOpeningReserved: supervisor.sourceOpeningReserved,
           successfulTools: supervisor.successfulTools,
           failedTools: supervisor.failedTools,
           reason: supervisor.reason ?? turnEnds?.kind,
@@ -524,6 +542,13 @@ export class ReactLoopAgent implements Agent {
         console.info(JSON.stringify({
           event: 'ai-control/turn', sessionId: this.session.id, turn, status: turnEnds?.kind,
           policyVersion: supervisor ? 7 : process.env.AI_CONTROL_FIRST_RESPONSE_HINT === '1' ? 8 : 2,
+          ...supervisor ? { supervisorVariant: {
+            firstEffort: process.env.AI_CONTROL_FIRST_EFFORT === 'selected' ? 'selected' : 'reduced',
+            neutralGuidance: process.env.AI_CONTROL_FIRST_GUIDANCE === 'neutral',
+            evidenceGate: process.env.AI_CONTROL_FIRST_EVIDENCE_GATE === '1',
+            draftReview: process.env.AI_CONTROL_DRAFT_REVIEW === '1',
+            progressReview: process.env.AI_CONTROL_PROGRESS_REVIEW === '1',
+          } } : {},
           steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
         }))
       }
@@ -559,13 +584,17 @@ export class ReactLoopAgent implements Agent {
       && ['deepseek-flash', 'claude-opus-5-5'].includes(decision.selection.model)
     const hintEnabled = !supervisor && process.env.AI_CONTROL_FIRST_RESPONSE_HINT === '1'
     const hintOnly = step === 1 && hintEnabled
-    const light = quick
+    const evidencePolicy = supervisor !== undefined && process.env.AI_CONTROL_FIRST_EVIDENCE_GATE === '1'
+    const evidenceGate = quick && evidencePolicy
+    const draftReview = evidenceGate && process.env.AI_CONTROL_DRAFT_REVIEW === '1'
+    const light = quick && process.env.AI_CONTROL_FIRST_EFFORT !== 'selected'
     const deploymentContext = supervisor ? process.env.AI_CONTROL_DEPLOYMENT_CONTEXT?.trim().slice(0, 2000) : undefined
     const renderedPrompt = [
       renderPrompt(assembly),
       deploymentContext && `AI Control deployment context. Use only for questions about this deployment: ${deploymentContext}`,
-      quick && quickPrompt,
+      quick && (process.env.AI_CONTROL_FIRST_GUIDANCE === 'neutral' ? neutralQuickPrompt : quickPrompt),
       hintOnly && firstResponseHint,
+      evidencePolicy && supervisor.continuation === 'needs_sources' && evidenceResponsePrompt,
     ].filter(Boolean).join('\n\n')
     const tools = quick ? [continuationTool] : assembly.tools
     let firstAttempt = true
@@ -630,6 +659,8 @@ export class ReactLoopAgent implements Agent {
       )
       let started = false
       const controlBlocks = new Set<number>()
+      let sourceCheck: boolean | undefined
+      let auditDraft = draftReview
       const workerStarted = performance.now()
       try {
         if (diagnostics) {
@@ -643,8 +674,17 @@ export class ReactLoopAgent implements Agent {
         for await (const chunk of stream) {
           signal.throwIfAborted()
           if (quick && chunk.type === 'block-start' && chunk.blockType === 'tool-call') controlBlocks.add(chunk.index)
-          live.push(chunk, !('index' in chunk && controlBlocks.has(chunk.index)))
-          if (diagnostics && diagnostics.firstTextMs === undefined && chunk.type === 'text-delta' && chunk.text.trim()) {
+          const text = chunk.type === 'text-delta' ? chunk.text
+            : chunk.type === 'block-end' && chunk.block.type === 'text' ? chunk.block.text : undefined
+          if (evidenceGate && sourceCheck === undefined && text?.trim()) {
+            const checks = await supervisor.firstAnswerChecks(draftReview)
+            sourceCheck = checks.sources
+            auditDraft = checks.audit
+          }
+          const visible = sourceCheck !== true && !(auditDraft && text !== undefined)
+            && !('index' in chunk && controlBlocks.has(chunk.index))
+          live.push(chunk, visible)
+          if (visible && diagnostics && diagnostics.firstTextMs === undefined && text?.trim()) {
             diagnostics.firstTextMs = Math.round(performance.now() - diagnostics.started)
           }
         }
@@ -653,7 +693,7 @@ export class ReactLoopAgent implements Agent {
         if (!started) throw error
         try {
           if (signal.aborted) {
-            const content = live.interruptedBlocks()
+            const content = sourceCheck || auditDraft ? [] : live.interruptedBlocks()
             if (content.length > 0) {
               live.settle('assistant/message', () => this.session.append('assistant/message', {
                 turn,
@@ -742,6 +782,19 @@ export class ReactLoopAgent implements Agent {
           }, `Worker requested continuation: ${reason}`, reason)
           return null
         }
+        const draft = auditDraft ? message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ') : ''
+        if (supervisor && diagnostics && (sourceCheck || (draft.trim() && await supervisor.draftNeedsSources(draft)))) {
+          live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
+          diagnostics.continuation = 'needs_sources'
+          const progress = 'Independent assessment found a material evidence gap in the first draft.'
+          setProgress(progress)
+          await supervisor.allow({ requests: diagnostics.requests + 1, steps: step + 1, tools: diagnostics.tools },
+            progress, 'needs_sources')
+          return null
+        }
+        if (draft.trim() && diagnostics && diagnostics.firstTextMs === undefined) {
+          diagnostics.firstTextMs = Math.round(performance.now() - diagnostics.started)
+        }
         live.settle(
           'assistant/message',
           () => this.session.append('assistant/message', {
@@ -760,7 +813,7 @@ export class ReactLoopAgent implements Agent {
         setProgress(`${progress} Tools requested: ${toolCalls.map(block => block.name).join(', ')}`)
         if (supervisor && diagnostics && (final || !await supervisor.allow({
           requests: diagnostics.requests + 1, steps: step + 1, tools: diagnostics.tools + toolCalls.length,
-        }, progress))) {
+        }, progress, undefined, toolCalls))) {
           for (const block of toolCalls) {
             const seq = this.session.append('tool/call', { turn, step, callId: block.id, name: block.name, arguments: block.arguments }).seq
             this.session.append('tool/result', {
@@ -786,6 +839,15 @@ export class ReactLoopAgent implements Agent {
           if (supervisor) {
             const failed = result.results.filter(item => item.result.isError).length
             supervisor.noteTools(result.results.length - failed, failed)
+            const searchIds = new Set(toolCalls.filter(call => call.name === 'web_search').map(call => call.id))
+            const discoveredSources = result.results.some(({ callId, result: outcome }) => {
+              if (outcome.isError || !searchIds.has(callId)) return false
+              const meta = outcome.meta as { sources?: unknown[] } | undefined
+              return Array.isArray(meta?.sources) && meta.sources.length > 0
+            })
+            supervisor.noteSuccessfulOperations(toolCalls, new Set(result.results.flatMap(item =>
+              item.result.isError ? [] : [item.callId],
+            )), discoveredSources)
             setProgress(`${progress} Tool outcomes: ${result.results.length - failed} succeeded, ${failed} failed.`)
           }
           return result.concluded ? { kind: 'completed' } : null

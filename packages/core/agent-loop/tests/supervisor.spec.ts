@@ -86,6 +86,69 @@ describe('per-turn Supervisor budget', () => {
     budget.close()
   })
 
+  it('allows bounded verification of a follow-up when the Worker can proceed with prior context', async () => {
+    vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse('UNCLEAR')
+    })
+    try {
+      budget.start([user], user)
+      await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
+      expect(budget.final).toBe(false)
+    } finally {
+      budget.close()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.each([
+    ['SELF_CONTAINED', false, false],
+    ['DIRECT', false, true],
+    ['SOURCES', true, true],
+    ['invalid output', false, true],
+  ])('selects first-answer checks for %s', async (label, sources, audit) => {
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(label)
+    })
+    try {
+      budget.start([user], undefined)
+      await expect(budget.firstAnswerChecks(true)).resolves.toEqual({ sources, audit })
+    } finally {
+      budget.close()
+    }
+  })
+
+  it('allows source verification after the draft identifies a material gap despite initial ambiguity', async () => {
+    const responses = ['UNCLEAR', 'VERIFY']
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(responses.shift() ?? 'FINISH')
+    })
+    try {
+      budget.start([user], undefined)
+      await expect(budget.draftNeedsSources('A decisive external claim')).resolves.toBe(true)
+      await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
+      expect(budget.final).toBe(false)
+    } finally {
+      budget.close()
+    }
+  })
+
+  it('reserves room for an admitted source operation when classification is unavailable', async () => {
+    vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse('invalid classification')
+    })
+    try {
+      budget.start([user], undefined)
+      await expect(budget.allow({ ...spend, tools: 0 }, '', 'needs_sources')).resolves.toBe(true)
+      await expect(budget.allow({ requests: 3, steps: 3, tools: 3 }, 'Open evidence')).resolves.toBe(true)
+      expect(budget.calls).toHaveLength(1)
+    } finally {
+      budget.close()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it.each([
     ['FINISH', 'finish'],
     ['CLARIFY', 'clarify'],
@@ -103,6 +166,62 @@ describe('per-turn Supervisor budget', () => {
     expect(budget.successfulTools).toBe(1)
     expect(budget.failedTools).toBe(1)
     budget.close()
+  })
+
+  it('gives the review structural next-operation evidence while keeping tool arguments local', async () => {
+    vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
+    const transport = vi.fn(async function* (options: GenerateOptions) {
+      yield* textResponse(options.system?.includes('materially') ? 'FINISH' : 'SOURCES')
+    })
+    const budget = new SupervisorBudget(new AbortController().signal, transport)
+    const done = { id: 'a', name: 'lookup', arguments: '{"query":"local-only-value"}' }
+    const failed = { id: 'b', name: 'lookup', arguments: '{"query":"another-local-value"}' }
+    try {
+      budget.start([user], undefined)
+      await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
+      budget.noteSuccessfulOperations([done, failed], new Set([done.id]))
+      await expect(budget.allow({ ...spend, steps: 4 }, 'One result', undefined, [done, failed])).resolves.toBe(false)
+      const request = JSON.stringify(transport.mock.calls[1]?.[0].messages)
+      expect(request).toContain('repeatsSuccessfulOperation')
+      const review = transport.mock.calls[1]?.[0].messages[0]?.content[0]
+      expect(review?.type === 'text' && JSON.parse(review.text).nextOperations).toEqual([
+        { tool: 'lookup', repeatsSuccessfulOperation: true },
+        { tool: 'lookup', repeatsSuccessfulOperation: false },
+      ])
+      expect(request).not.toContain('local-value')
+      expect(request).not.toContain('local-only-value')
+    } finally {
+      budget.close()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.each([
+    { succeeded: true, foundSources: true },
+    { succeeded: true, foundSources: false },
+    { succeeded: false, foundSources: false },
+  ])('reserves one source-reading batch after finding sources ($succeeded, $foundSources)', async ({ succeeded, foundSources }) => {
+    vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
+    const answers = ['SOURCES', 'FINISH', 'FINISH']
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(answers.shift() ?? 'FINISH')
+    })
+    const search = { id: 'search', name: 'web_search', arguments: '{}' }
+    const read = { id: 'read', name: 'web_fetch', arguments: '{}' }
+    try {
+      budget.start([user], undefined)
+      await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
+      budget.noteSuccessfulOperations([search], new Set(succeeded ? [search.id] : []), foundSources)
+      await expect(budget.allow({ requests: 4, steps: 4, tools: 3 }, '', undefined, [read])).resolves.toBe(foundSources)
+      if (foundSources) {
+        expect(budget.calls).toHaveLength(1)
+        await expect(budget.allow({ requests: 5, steps: 5, tools: 4 }, '', undefined, [read])).resolves.toBe(false)
+      }
+      expect(budget.reason).toBe('finish')
+    } finally {
+      budget.close()
+      vi.unstubAllEnvs()
+    }
   })
 
   it('reviews spent grants and reserves a tool-free answer at the hard limit', async () => {
