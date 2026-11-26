@@ -2200,6 +2200,7 @@ describe('parallel Supervisor integration', () => {
   it.each([
     { outcome: 'success', natural: false },
     { outcome: 'success', natural: true },
+    { outcome: 'http-denied', natural: true },
     { outcome: 'empty', natural: false },
     { outcome: 'error', natural: false },
   ] as const)('settles a provisional synthesis after one revision attempt ($outcome, natural: $natural)', async ({ outcome, natural }) => {
@@ -2212,9 +2213,9 @@ describe('parallel Supervisor integration', () => {
     const responses = [
       { decision: 'SOURCES' },
       ...natural ? [] : [{ decision: 'FINISH' }],
-      { decision: 'REVISE', observation: 'The document only covers one version.' },
+      outcome === 'http-denied' ? { decision: 'ACCEPT' } : { decision: 'REVISE', observation: 'The document only covers one version.' },
     ]
-    const supervisorFetch = vi.fn(async () => Response.json({
+    const supervisorFetch = vi.fn(async (_url: string, _options: RequestInit) => Response.json({
       choices: [{ message: { content: JSON.stringify(responses.shift() ?? { decision: 'ACCEPT' }) } }],
     }))
     vi.stubGlobal('fetch', supervisorFetch)
@@ -2244,7 +2245,7 @@ describe('parallel Supervisor integration', () => {
       output: {
         schema: { type: 'string' },
         render: (_args, value) => [{ type: 'text', text: value }],
-        presentationMeta: () => ({ url, statusCode: 200 }),
+        presentationMeta: () => ({ url, statusCode: outcome === 'http-denied' ? 403 : 200 }),
       },
       execute,
     }))
@@ -2254,8 +2255,17 @@ describe('parallel Supervisor integration', () => {
     const idle = waitForIdle(ctx, agent)
     send(agent, 'Verify the conditions')
     await idle
-    expect(supervisorFetch).toHaveBeenCalledTimes(natural ? 2 : 3)
     expect(execute).toHaveBeenCalledOnce()
+    if (outcome === 'http-denied') {
+      expect(supervisorFetch).toHaveBeenCalledTimes(2)
+      const audit = supervisorFetch.mock.calls[1]?.[1].body
+      expect(audit).toContain('discovery_only')
+      expect(audit).not.toContain('Documented conditions')
+      expect(adapter.requests).toHaveLength(4)
+      expect(JSON.stringify(agent.session.deriveMessages())).toContain('Unsupported universal conclusion')
+      return
+    }
+    expect(supervisorFetch).toHaveBeenCalledTimes(natural ? 2 : 3)
     expect(adapter.requests).toHaveLength(natural ? 5 : 6)
     expect(adapter.requests.at(-1)?.tools ?? []).toEqual([])
     const revisionMessages = JSON.stringify(adapter.requests.at(-1)?.messages)

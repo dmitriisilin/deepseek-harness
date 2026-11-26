@@ -286,13 +286,13 @@ export class SupervisorBudget {
     this.sourceExcerpts.push(text.slice(0, 50000))
   }
 
-  private hasAuditEvidence(): boolean {
+  private hasSourceAuditContext(): boolean {
     return process.env.AI_CONTROL_SYNTHESIS_AUDIT === '1' && this.continuation === 'needs_sources'
-      && this.sourceExcerpts.length > 0
+      && (this.sourceDiscoverySucceeded || this.sourceExcerpts.length > 0)
   }
 
   canAuditSynthesis(spend: Spend): boolean {
-    return this.hasAuditEvidence() && !this.hardLimitExceeded(spend)
+    return this.hasSourceAuditContext() && !this.hardLimitExceeded(spend)
   }
 
   async synthesisRevisionAdvice(draft: string): Promise<string | undefined> {
@@ -310,6 +310,7 @@ export class SupervisorBudget {
           'Choose ACCEPT only when each decisive external claim is supported by the excerpts within the conditions stated, or explicitly left unresolved.',
           'Choose REVISE when a decisive conclusion contradicts a source, omits a material condition, overstates certainty, or takes an older source as proof of a current claim.',
           'The existence of a link does not establish correctness, applicability, or current validity.',
+          'If discovery found links but no eligible document was read, check whether the answer clearly leaves decisive outside claims unresolved.',
           'For revisions, identify the unsupported claim or missing condition that most directly changes the answer to the user’s question.',
           'Do not propose facts absent from the excerpts.',
         ].join(' '),
@@ -318,6 +319,7 @@ export class SupervisorBudget {
           content: [{ type: 'text', text: JSON.stringify({
             task: this.task, previousTask: this.previousTask,
             draft: draft.length <= 5000 ? draft : `${draft.slice(0, 3400)}\n[…]\n${draft.slice(-1500)}`,
+            sourceCoverage: this.sourceExcerpts.length > 0 ? 'document_excerpts' : 'discovery_only',
             excerpts: this.sourceExcerpts.map(source => auditExcerpt(source, excerptTerms)),
           }) }],
         })],
@@ -357,7 +359,7 @@ export class SupervisorBudget {
     this.signal.throwIfAborted()
     if (this.final) return false
     if (this.hardLimitExceeded(spend)) return this.finish('hard_limit')
-    if (this.hasAuditEvidence() && (spend.requests >= hard.requests - 1 || spend.steps >= hard.steps)) {
+    if (this.hasSourceAuditContext() && (spend.requests >= hard.requests - 1 || spend.steps >= hard.steps)) {
       return this.finish('synthesis_reserved')
     }
     if (!this.limit) {
@@ -462,8 +464,8 @@ export class SupervisorBudget {
   }
 
   noteSuccessfulOperations(calls: readonly WorkCall[], successfulIds: ReadonlySet<string>, discoveredSources = false): void {
-    if (!this.progressReview) return
     this.sourceDiscoverySucceeded ||= discoveredSources
+    if (!this.progressReview) return
     for (const call of calls) {
       if (!successfulIds.has(call.id)) continue
       const key = this.operationKey(call)
