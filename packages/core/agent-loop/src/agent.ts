@@ -661,7 +661,8 @@ export class ReactLoopAgent implements Agent {
         if (supervisor?.reason === 'supplied_only') {
           advice = 'Use only the material supplied by the user. Identify limits or ambiguities within it without adding external facts.'
         } else if (supervisor?.reason === 'clarify' || supervisor?.reason === 'ambiguous_input') {
-          advice = 'Give what can be established from the available information and ask one concise question about the decisive missing detail.'
+          advice = 'Lead with the decisive missing detail and ask one concise question about it.'
+            + ' State any useful partial conclusion with its conditions. Leave the main conclusion open when it depends on the missing detail.'
         } else if (evidencePolicy && supervisor?.continuation === 'needs_sources') {
           advice = 'Lead with the best supported conclusion and the scope that makes it true. Cite the evidence for decisive claims.'
             + ' If sources disagree or do not cover the requested case, distinguish the documented cases and state what remains unresolved.'
