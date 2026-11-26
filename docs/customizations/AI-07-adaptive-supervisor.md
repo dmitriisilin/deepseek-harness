@@ -450,3 +450,17 @@ In the first insurance turn, discovery returned ten leads. The next Worker reque
 On the registration follow-up the Worker proposed reads directly. The existing opening reservation was used and the new proposal reservation was not. A police explanatory page returned HTTP 200, but the answer treated limited material as authoritative across vehicle ages without establishing the current rule. Final first text / total was 71.39 / 76.31 s. As neither turn used the new proposal reservation, this pair is inconclusive about its effect. Turn diagnostics now include the count of distinct nonempty successful document reads, without URLs or document text.
 
 The no-document synthesis notice is enabled only with final reads filtering. The deterministic test confirms that the exploration request sees the search lead and that the tool-free final request instead receives the verified no-document status. In an isolated Flash smoke test, the specified missing page returned HTTP 404 and the model left the claim unverified. The turn completed naturally without a separate final synthesis request, so it did not exercise the notice. Final first text / total was 6.67 / 8.40 s with one tool and zero readable documents. Arithmetic passed in one request (1.41 s total).
+
+Opus reproduced the missing-page result. It reported HTTP 404 and left support unverified, respecting the single-source scope. It completed naturally with zero readable documents, one tool and three Worker requests (7.82 / 7.84 s). Arithmetic passed in one request (1.13 / 1.14 s). As on Flash, the successful behavior in this smoke does not establish an effect from the separate final synthesis notice.
+
+### Paired first-effort comparison
+
+Flash replayed the same three checkpoint questions with only the first effort toggled. Request headers confirmed "off" followed by "high" in the reduced run, and turn diagnostics confirmed "high" on the first selected-effort request. Both variants correctly answered arithmetic and the core SQLite and Git questions using the supplied documentation scope. Both SQLite answers stated the default too broadly for custom builds. The selected-effort Git answer added a relevant distinction between revision syntax and refnames. The reduced-effort answer still covered the requested rules and prior checkout expansion.
+
+| Flash case | Reduced first effort, final first text / total (s) | Selected first effort, final first text / total (s) | Worker requests / tools, reduced → selected |
+| --- | ---: | ---: | --- |
+| SQLite | 12.28 / 16.09 | 17.74 / 23.61 | 4 / 2 → 4 / 2 |
+| Git | 22.55 / 27.34 | 77.47 / 85.76 | 4 / 2 → 3 / 2 |
+| Arithmetic | 1.58 / 1.71 | 1.47 / 1.47 | 1 / 0 → 1 / 0 |
+
+This pair does not demonstrate a material correctness gain from selecting higher effort on the initial request. Git changed its request sequence, and a single observation cannot establish the size or persistence of a latency penalty. The experiment does not support a default change on its own.

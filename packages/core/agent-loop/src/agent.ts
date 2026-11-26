@@ -83,6 +83,7 @@ interface TurnDiagnostics {
   firstTextMs?: number
   finalAnswerFirstTextMs?: number
   effort?: string
+  firstWorkerEffort?: string
   preparationMs?: number
   requests: number
   tools: number
@@ -715,6 +716,7 @@ export class ReactLoopAgent implements Agent {
         if (diagnostics) {
           diagnostics.requests += 1
           diagnostics.effort = request.reasoningEffort ?? 'adapter-default'
+          diagnostics.firstWorkerEffort ??= diagnostics.effort
         }
         const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
         signal.throwIfAborted()

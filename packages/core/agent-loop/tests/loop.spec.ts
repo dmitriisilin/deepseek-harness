@@ -2021,7 +2021,8 @@ describe('parallel Supervisor integration', () => {
     vi.stubEnv('AI_CONTROL_FIRST_EFFORT', firstEffort)
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
-    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+    onTestFinished(() => { log.mockRestore(); vi.unstubAllEnvs(); vi.unstubAllGlobals() })
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: '{"decision":"DEEP"}' } }] })))
     const adapter = new MockAdapter([
       toolCallResponse('internal', 'request_continuation', { reason: 'needs_sources' }),
@@ -2044,6 +2045,8 @@ describe('parallel Supervisor integration', () => {
     send(agent, 'Find the official source')
     await idle
     expect(adapter.requests.map(request => request.reasoningEffort)).toEqual([firstEffort === 'selected' ? 'high' : 'low', 'high', 'high'])
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(`"firstWorkerEffort":"${firstEffort === 'selected' ? 'high' : 'low'}"`))
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"effort":"high"'))
     expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toEqual(['request_continuation'])
     expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toEqual(['web_search'])
     expect(execute).toHaveBeenCalledTimes(denied ? 0 : 1)
