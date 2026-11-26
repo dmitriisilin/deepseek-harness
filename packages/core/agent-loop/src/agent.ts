@@ -560,6 +560,7 @@ export class ReactLoopAgent implements Agent {
             neutralGuidance: process.env.AI_CONTROL_FIRST_GUIDANCE === 'neutral',
             evidenceGate: process.env.AI_CONTROL_FIRST_EVIDENCE_GATE === '1',
             claimEvidence: process.env.AI_CONTROL_CLAIM_EVIDENCE === '1',
+            finalReadsOnly: process.env.AI_CONTROL_FINAL_READS_ONLY === '1',
             draftReview: process.env.AI_CONTROL_DRAFT_REVIEW === '1',
             progressReview: process.env.AI_CONTROL_PROGRESS_REVIEW === '1',
             synthesisAudit: process.env.AI_CONTROL_SYNTHESIS_AUDIT === '1',
@@ -681,6 +682,8 @@ export class ReactLoopAgent implements Agent {
         config, preparedCall, provisionalSynthesis ? [] : tools, { turn, step },
         startsRequestSeries || provisionalSynthesis !== undefined, signal,
         light ? decision.selection.reasoningEffort ?? null : undefined,
+        (final || provisionalSynthesis !== undefined) && supervisor?.continuation === 'needs_sources'
+          && process.env.AI_CONTROL_FINAL_READS_ONLY === '1',
       )
       const live = new AssistantStreamAttempt(
         this.session.id,
@@ -1026,6 +1029,7 @@ export class ReactLoopAgent implements Agent {
     startsRequestSeries: boolean,
     signal: AbortSignal,
     selectedReasoningEffort?: LlmCallConfig['reasoningEffort'] | null,
+    omitSearchLeads = false,
   ): GenerateOptions {
     const { session } = this
     const surfaceGeneration = session.surface.contentGeneration
@@ -1094,7 +1098,17 @@ export class ReactLoopAgent implements Agent {
 
     // canonicalHeader is shallow; append logs a detached snapshot, not these local values.
     deepFreeze(header)
-    const boundaryMessages = session.deriveMessages()
+    const history = session.deriveMessages()
+    const searchCalls = omitSearchLeads ? new Set(history.flatMap(message => message.role === 'assistant'
+      ? message.content.flatMap(block => block.type === 'tool-call' && block.name === 'web_search' ? [block.id] : [])
+      : [])) : undefined
+    const boundaryMessages = searchCalls ? history.map(message => message.role === 'tool' && searchCalls.has(message.toolCallId)
+      ? createToolResultMessage({
+        callId: message.toolCallId,
+        isError: message.isError,
+        content: [{ type: 'text', text: 'Search discovery only. Use the documents read separately as evidence for conclusions.' }],
+      })
+      : message) : history
     for (const message of boundaryMessages) {
       if (this.frozenMessages.has(message)) continue
       deepFreeze(message)

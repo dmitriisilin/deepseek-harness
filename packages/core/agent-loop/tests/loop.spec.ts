@@ -2240,6 +2240,7 @@ describe('parallel Supervisor integration', () => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
     vi.stubEnv('AI_CONTROL_SYNTHESIS_AUDIT', '1')
+    vi.stubEnv('AI_CONTROL_FINAL_READS_ONLY', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
     onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
     vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
@@ -2289,6 +2290,8 @@ describe('parallel Supervisor integration', () => {
     send(agent, 'Verify the conditions')
     await idle
     expect(execute).toHaveBeenCalledOnce()
+    expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('A public source')
+    expect(JSON.stringify(agent.session.deriveMessages())).toContain('A public source')
     if (outcome === 'http-denied') {
       expect(supervisorFetch).toHaveBeenCalledTimes(2)
       const audit = supervisorFetch.mock.calls[1]?.[1].body
@@ -2300,8 +2303,18 @@ describe('parallel Supervisor integration', () => {
     }
     expect(supervisorFetch).toHaveBeenCalledTimes(natural ? 2 : 3)
     expect(adapter.requests).toHaveLength(natural ? 5 : 6)
+    if (!natural) {
+      const finalRequest = adapter.requests.at(-2)
+      expect(finalRequest?.tools ?? []).toEqual([])
+      const discovery = finalRequest?.messages.find(message => message.role === 'tool' && message.toolCallId === 'discover')
+      expect(discovery).toMatchObject({ role: 'tool', isError: false })
+      expect(JSON.stringify(discovery)).toContain('Search discovery only')
+      expect(JSON.stringify(finalRequest?.messages)).toContain('Documented conditions')
+    }
     expect(adapter.requests.at(-1)?.tools ?? []).toEqual([])
     const revisionMessages = JSON.stringify(adapter.requests.at(-1)?.messages)
+    expect(revisionMessages).not.toContain('A public source')
+    expect(revisionMessages).toContain('Documented conditions')
     expect(revisionMessages).toContain('provisional synthesis was flagged')
     expect(revisionMessages).toContain('The document only covers one version.')
     expect(JSON.stringify(adapter.requests.at(-2)?.messages)).not.toContain('The document only covers one version.')
