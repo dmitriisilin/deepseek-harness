@@ -418,3 +418,21 @@ The progress-aware checkpoint now receives the same bounded previous user messag
 The Flash follow-up with prior user context reached a progress review, which returned CLARIFY after three tool operations. The final response kept the vehicle context and asked about year and registration type, but first stated eligibility too confidently for the incomplete legal sources and did not settle the registration-insurance distinction. It disclosed the missing primary text only later. Final first text / total was 81.57 / 87.23 s versus 41.69 / 45.20 s in the preceding filtered observation. The search paths and review verdicts differed, so this is evidence that the clarification transition ran, with no established quality or latency improvement from the context change.
 
 Clarification synthesis now leads with the missing detail and leaves a dependent conclusion open. The Flash compatibility smoke began with that limitation and gave no compatibility verdict (4.36 s to final text, 5.21 s total, two Worker requests, zero tools). It requested more configuration details than the minimum at this stage. The calculation control passed in one request (1.34 s). This validates the exercised clarification path and leaves the source-based follow-up to be rechecked.
+
+### Progress review held-out comparison
+
+The fixed [checkpoint questions](AI-07-quality-checkpoint-holdout.json) compare `AI_CONTROL_PROGRESS_REVIEW=0` and `1` on Flash. Both use selected first effort, neutral guidance, first evidence gating, claim-evidence guidance and final reads only, with all draft audits disabled. Review correctness and successful reads before comparing elapsed times. Use the [SQLite foreign key documentation](https://www.sqlite.org/foreignkeys.html#fk_enable) and [Git reference-format manual](https://git-scm.com/docs/git-check-ref-format) to score the source claims. These are new prompt formulations, although Git reference naming was covered by an earlier fixture.
+
+In the control SQLite turn, the Worker actually read the official foreign-key documentation and correctly identified per-connection scope and the no-op inside a transaction. Its example assumed the connection had started with enforcement disabled without stating that prerequisite. Score the main claims as supported and record the example's missing condition. Final first text / total was 30.42 / 34.85 s with six Worker requests and five tools.
+
+The progress-aware SQLite replay also answered both explicit questions correctly. The checkpoint returned CLARIFY and the answer led by asking which driver was in use. This was unnecessary for the requested SQLite-level behavior. First final text / total was 25.69 / 28.43 s, with six Worker requests and five tools in both variants. The quality comparison therefore exposes an unnecessary clarification despite the faster observation.
+
+Git passed the key factual checks in both variants. The progress-aware answer had an early visible message at 23.49 s, while its final answer started at 49.67 s. This illustrates why the final-answer metric is used for the comparison.
+
+| Flash held-out case | Basic review, final first text / total (s) | Progress-aware review, final first text / total (s) | Content comparison |
+| --- | ---: | ---: | --- |
+| SQLite | 30.42 / 34.85 | 25.69 / 28.43 | Core claims pass. Asking for the driver was unnecessary. |
+| Git | 45.43 / 51.49 | 49.67 / 56.45 | Key claims pass in both. |
+| Arithmetic | 1.43 / 1.43 | 1.35 / 1.35 | Correct and one Worker request in both. |
+
+The two variants used identical request and tool counts for each paired case. This comparison does not establish a quality improvement from progress-aware review. Treat a materially missing fact as a clarification trigger only if it blocks the actual question. Optional environment details should not delay a useful general answer.
