@@ -544,3 +544,37 @@ The experimental `AI_CONTROL_EXTENSION_REASON=1` makes a bare EXTEND fall back t
 In the isolated Flash replay, both reviews returned findings and granted extensions. Palisade read five documents and explicitly distinguished the documented case from the unknown mechanism for a newer model. It still repeated an unsafe quotation about moving between rows while driving and generalized the recommendation beyond the evidence. The quality gate failed. Final first text / total was 73.38 / 78.90 s with eight Worker requests and nine tools. The prior guidance-on run without required findings took 70.69 / 73.23 s with six requests and seven tools, and had a different source path. The percentage control remained correct in one request, taking 1.44 s. This shows that both documented extensions can pass admission, with no evidence that requiring the finding improves the answer by itself.
 
 The extension-finding experiment was removed after this run. A nonempty free-form rationale is weak admission evidence. Any successor should compare actual operations and their outcomes against the gap, with the normal permission checks still in charge of execution.
+
+### Exact repeated searches
+
+Four deterministic checks of an experimental boundary rule confirmed that it stopped only a batch of identical, previously successful web searches after a document read. A failed prior search, a mixed batch with a new query, and a turn without a read still reached normal review. The rule was removed after inspecting ten saved runs (24 sessions, 27 dispatched web searches on Flash and Opus). None exactly repeated the arguments of a previously successful search in the same turn. The inspection only covers dispatched calls, so it cannot measure attempts already rejected before dispatch. It does show that exact matching would not have prevented any observed repeat expenditure in this sample.
+
+### Starting allowance for source turns
+
+The experimental source allowance lets an explicit source continuation use a fourth model request and step before review. Its tool allowance remains four. The isolated Flash comparison held other flags and questions fixed against the source-guidance-on replay.
+
+| Flash case | Standard start, final first text / total (s) | One additional initial step, final first text / total (s) | Worker requests / tools / read documents, standard → extra |
+| --- | ---: | ---: | --- |
+| Palisade | 70.69 / 73.23 | 45.54 / 53.42 | 6 / 7 / 3 → 6 / 6 / 3 |
+| Insurance | 40.45 / 43.83 | 63.78 / 67.58 | 5 / 3 / 2 → 8 / 8 / 2 |
+| Registration follow-up | 57.33 / 60.79 | 35.61 / 37.83 | 4 / 3 / 2 → 5 / 2 / 1 |
+| Percentage | 1.46 / 1.46 | 1.56 / 1.57 | 1 / 0 / 0 in both |
+
+Palisade distinguished known configuration from missing seat mechanism evidence but extrapolated its practical recommendation. Insurance asserted that comprehensive coverage was available while using secondary reporting and leaving insurer discretion inadequately qualified. Registration correctly limited its conclusion to what the inspected procedure covered and kept the broader eligibility question open. Percentage passed. The extra initial step did not reliably improve the decisive claims, and insurance spent substantially more work without obtaining more documents. Search-path variability precludes interpreting the timing differences as a stable speed gain.
+
+The extra starting allowance was removed from the code. The next comparison should establish whether source quality failures persist under the ordinary Harness with the same Worker and cases, before testing more budget changes.
+
+### Current ordinary Harness control
+
+The same red Flash profile replayed Palisade with Supervisor and the separate first-response hint disabled. The ordinary loop completed in 239.37 s, with 14 recorded steps and 24 tool calls. The browser runner itself timed out waiting for a disabled diagnostic event, so this timing is derived from the durable turn-start and turn-end timestamps. First useful text was not measured for this observation. The remaining cases use explicit turn logging.
+
+The ordinary answer found the manufacturer's restriction on using the seat mechanism with a child restraint installed, but then advised trying the mechanism with an unoccupied restraint installed. It also repeated an unsafe observation about moving between rows in motion. This fails the quality gate even without Supervisor admission, and demonstrates that increasing search time alone is insufficient. It does not establish parity across other cases or across repetitions.
+
+| Flash case | Ordinary loop, final first text / total (s) | Supervisor, final first text / total (s) | Steps / tools, ordinary → Supervisor |
+| --- | ---: | ---: | --- |
+| Palisade | unavailable / 239.37 | 70.69 / 73.23 | 14 / 24 → 6 / 7 |
+| Insurance | 36.61 / 42.63 | 40.45 / 43.83 | 3 / 3 → 5 / 3 |
+| Registration follow-up | 38.59 / 42.35 | 57.33 / 60.79 | 3 / 3 → 4 / 3 |
+| Percentage | 1.72 / 1.72 | 1.46 / 1.46 | 1 / 0 in both |
+
+The Supervisor column is the earlier guidance-on control with standard starting allowance and no synthesis audit. The ordinary insurance answer failed the effective-rule check by citing superseded regulation 431-P as current. The ordinary registration answer remembered the condition and distinguished registration from insuring the car. It gave a broader conclusion than its references established and used a secondary reference for the current insurance requirement. The percentage control passed in both. This pair shows a large reduction in Palisade work, but no consistent speedup across complex cases and no robust comparative quality win.
