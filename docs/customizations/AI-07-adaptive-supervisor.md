@@ -320,3 +320,15 @@ The next audit prompt explicitly distinguishes necessary conditions from suffici
 The full replay of `4156862cd7` did not replicate the frozen direct-call result. On the same five turns, Flash passed three, Opus four, with one Worker request and zero tools per turn. Flash added a mandatory approver field absent from the record and implied that removing the adapter could establish permission for Y. Opus again said that removing it was sufficient for both models. Both models handled the known-model follow-up. The unknown-model turn took 7.65 / 7.66 s on Flash and 5.50 / 5.50 s on Opus (first text / total). The numeric control took 1.38 / 1.40 s and 0.96 / 0.96 s respectively. This repeat rules out treating the new audit wording alone as a verified fix. Retain the previous default.
 
 The next comparison changed only the supplied-material audit criterion. It asks whether the supplied facts could all be true while the proposed conclusion is false. The known regression involving a necessary condition passed on both models. Flash's initial draft passed the audit and reached first text in 3.65 s. Opus's audit explicitly requested a revision and the resulting answer reached first text in 13.81 s, versus 5.50 s for the earlier incorrect Opus answer. Opus still used ambiguous wording about whether approval was absent or merely unrecorded, which the audit accepted. Both follow-ups and the numeric control passed. The numeric control took 1.37 s on Flash and 1.28 s on Opus to first text. The change demonstrates one actual correction, with no evidence yet of consistent improvement on new questions.
+
+On the separate [entailment holdout](AI-07-quality-entailment-holdout.json), both Flash variants gave the expected core answer on all five turns. The audit candidate added an unsupported implication that waiting after restoration could settle delivery, and an unsolicited confidence interval on a question whose exact arithmetic bounds already suffice. The latter bypassed the audit. The single-number control was misclassified as a general question and ran the independent first-draft review, which was enabled in both configurations. It did not run the supplied-material audit. The supplied-material audit itself produced three accepts and zero revisions.
+
+| Fresh Flash case | Audit off, first text / total (s) | Audit on, first text / total (s) |
+| --- | ---: | ---: |
+| Delivery record | 2.94 / 5.45 | 4.45 / 4.46 |
+| Unknown plan | 2.03 / 2.57 | 3.47 / 3.48 |
+| Approval follow-up | 1.41 / 1.91 | 3.76 / 3.77 |
+| Survey bounds | 13.85 / 15.24 | 6.08 / 8.67 |
+| Arithmetic control | 1.95 / 1.95 | 2.30 / 2.31 |
+
+This single paired run gives no reason to enable the flag. The next evaluation should distinguish the effect of classifying material as supplied-only from the effect of auditing a fixed draft. The separate first-draft review can delay an easy answer following a routing error. Evaluate that path independently from the supplied-material audit.
