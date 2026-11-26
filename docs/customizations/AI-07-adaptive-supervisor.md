@@ -1,5 +1,24 @@
 # AI-07. Adaptive Supervisor
 
+**Status: TODO.** Supervisor is disabled in AI Control. Use the stock agent loop (`AI_CONTROL_SUPERVISOR=0`) and retain independent turn diagnostics (`AI_CONTROL_TURN_LOG=1`). The flags and designs below describe experiments.
+
+## Decision after live experiments
+
+The experiments did not establish a repeatable improvement in both answer quality and delay. Reducing Flash's initial reasoning and adding parallel advice together shortened turns, but skipped source checks on some questions. In one run the registration answer cited an outdated order. On Palisade the repaired low-effort prototype finished in 64.2 s versus a 237.6 s stock run, but introduced an unsupported child-seat mounting claim. These changes were evaluated together, so the timings cannot isolate the effect of each.
+
+The later comparison kept Flash's first request on the selected high effort with the regular tools. Its candidate made one advisory call after the first tool batch. Each row is one run per mode. Times are first visible text / total seconds. Tool counts and model requests exclude the advisory call.
+
+| Scenario | Stock | Advisory after first tool batch | Flash requests / tools, stock → candidate | Content |
+|---|---|---|---|---|
+| Palisade | 177.2 / 183.4 | No text / 300.4, test harness stopped waiting | 9 / 16 → 28 / 37 | Stock returned an answer. Candidate had no final answer at cutoff. |
+| Insurance | 11.7 / 15.6 | 22.7 / 27.0 | 1 / 0 → 2 / 1 | Same core distinction between mandatory and voluntary insurance. |
+| Registration follow-up in the same chat | 12.7 / 16.3 | 19.1 / 22.7 | 1 / 0 → 2 / 1 | Both wrongly listed the insurance policy as a registration prerequisite. |
+| Arithmetic | 1.4 / 1.4 | 1.9 / 1.9 | 1 / 0 → 1 / 0 | Both correct. |
+
+The advisory call returned PASS in all three applicable turns and took 0.6–1.0 s. It did not steer any of those answers. The spread is observed run-to-run variation and cannot be attributed to advice. The 300 s cutoff was part of the test runner, not a Supervisor limit. Neither the one-time check nor the earlier timed budgets justify enabling Supervisor.
+
+To reopen AI-07, first trace a slow Opus turn through the stock loop. Attribute time separately to provider reasoning, model round trips, tool work, approval waits, and repeat operations. Compare the same task and model settings before changing how decisions are made. Keep any future intervention at operation boundaries and require reproducible gains without loss of answer quality.
+
 Set `AI_CONTROL_SUPERVISOR=1` on the AI Control service and supply `DEEP_SEEK_Supervisor` through its environment. The controller uses official DeepSeek Flash with reasoning disabled. It applies to both Flash and Opus Worker turns. Set `AI_CONTROL_TURN_LOG=1` independently to measure the original loop.
 
 ## Baselines
