@@ -124,8 +124,8 @@ export function continuationReason(raw: string): ContinuationReason | undefined 
   return undefined
 }
 
-const hard = { requests: 8, steps: 7, tools: 12, durationMs: 90000 }
-type Spend = { requests: number; steps: number; tools: number; durationMs: number }
+const hard = { requests: 8, steps: 7, tools: 12 }
+type Spend = { requests: number; steps: number; tools: number }
 
 interface SupervisorCall {
   kind: 'initial' | 'review'
@@ -143,7 +143,6 @@ export class SupervisorBudget {
   private initial: Promise<Decision> | undefined
   private limit: Spend | undefined
   private task = ''
-  private started = performance.now()
   readonly calls: SupervisorCall[] = []
   extensions = 0
   successfulTools = 0
@@ -158,7 +157,6 @@ export class SupervisorBudget {
 
   start(messages: readonly UserMessage[], previous: UserMessage | undefined): void {
     if (this.initial !== undefined) return
-    this.started = performance.now()
     this.task = messages.filter(message => message.source.kind === 'user').map(boundedText).join('\n').slice(0, 3000)
     const started = performance.now()
     const call = this.record('initial', started)
@@ -205,10 +203,9 @@ export class SupervisorBudget {
       const fallback = decision?.reason === 'deadline' || decision?.reason === 'provider_error'
         || decision?.reason === 'invalid_output'
       this.limit = fallback
-        ? { requests: 2, steps: 2, tools: 2, durationMs: 15000 }
-        : { requests: 3, steps: 3, tools: 4, durationMs: 25000 }
+        ? { requests: 2, steps: 2, tools: 2 }
+        : { requests: 3, steps: 3, tools: 4 }
     }
-    spend = { ...spend, durationMs: Math.max(spend.durationMs, this.elapsed()) }
     if (continuation !== undefined) this.continuation = continuation
     const limit = this.limit
     if (Object.keys(limit).every(key => spend[key as keyof Spend] <= limit[key as keyof Spend])) return true
@@ -243,7 +240,7 @@ export class SupervisorBudget {
       this.extensions += 1
       this.limit = {
         requests: Math.min(spend.requests + 1, hard.requests), steps: Math.min(spend.steps + 1, hard.steps),
-        tools: Math.min(spend.tools + 2, hard.tools), durationMs: Math.min(spend.durationMs + 15000, hard.durationMs),
+        tools: Math.min(spend.tools + 2, hard.tools),
       }
       return true
     } catch {
@@ -261,12 +258,7 @@ export class SupervisorBudget {
   }
 
   private hardLimitExceeded(spend: Spend): boolean {
-    return Math.max(spend.durationMs, this.elapsed()) >= hard.durationMs
-      || spend.requests > hard.requests || spend.steps > hard.steps || spend.tools > hard.tools
-  }
-
-  elapsed(): number {
-    return performance.now() - this.started
+    return spend.requests > hard.requests || spend.steps > hard.steps || spend.tools > hard.tools
   }
 
   finish(reason: string): false {

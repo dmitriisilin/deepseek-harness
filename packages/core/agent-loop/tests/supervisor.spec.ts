@@ -40,7 +40,7 @@ describe('AI Control Supervisor', () => {
 })
 
 describe('per-turn Supervisor budget', () => {
-  const spend = { requests: 2, steps: 2, tools: 1, durationMs: 1000 }
+  const spend = { requests: 2, steps: 2, tools: 1 }
 
   it('waits for the initial decision only at a work boundary', async () => {
     const response = Promise.withResolvers<string>()

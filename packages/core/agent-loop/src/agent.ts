@@ -109,6 +109,12 @@ const continuationTool = {
     additionalProperties: false,
   },
 }
+const firstResponseHint = [
+  'Answer briefly and directly when you have enough information.',
+  'If a reliable answer requires information you do not have, use the appropriate tool, then answer from its results.',
+  'Ask a focused question only when an important ambiguity prevents useful progress.',
+].join(' ')
+
 const quickPrompt = [
   'On this first pass, answer directly if you can give a useful answer immediately.',
   'If the user explicitly requests current sources, an action, or genuinely deeper reasoning,',
@@ -421,7 +427,6 @@ export class ReactLoopAgent implements Agent {
         if (step > 1 && !turnEnds && supervisor && diagnostics && !supervisor.final) {
           await supervisor.allow({
             requests: diagnostics.requests + 1, steps: step, tools: diagnostics.tools,
-            durationMs: supervisor.elapsed(),
           }, progress)
         }
         const decision = await this.preStep(target, { turn, step }, supervisor)
@@ -518,7 +523,8 @@ export class ReactLoopAgent implements Agent {
         const { started, ...metrics } = diagnostics
         console.info(JSON.stringify({
           event: 'ai-control/turn', sessionId: this.session.id, turn, status: turnEnds?.kind,
-          policyVersion: supervisor ? 6 : 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
+          policyVersion: supervisor ? 7 : process.env.AI_CONTROL_FIRST_RESPONSE_HINT === '1' ? 8 : 2,
+          steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
         }))
       }
       try {
@@ -551,12 +557,15 @@ export class ReactLoopAgent implements Agent {
     const final = supervisor?.final === true
     const quick = supervisor !== undefined && step === 1
       && ['deepseek-flash', 'claude-opus-5-5'].includes(decision.selection.model)
+    const hintEnabled = !supervisor && process.env.AI_CONTROL_FIRST_RESPONSE_HINT === '1'
+    const hintOnly = step === 1 && hintEnabled
     const light = quick
     const deploymentContext = supervisor ? process.env.AI_CONTROL_DEPLOYMENT_CONTEXT?.trim().slice(0, 2000) : undefined
     const renderedPrompt = [
       renderPrompt(assembly),
       deploymentContext && `AI Control deployment context. Use only for questions about this deployment: ${deploymentContext}`,
       quick && quickPrompt,
+      hintOnly && firstResponseHint,
     ].filter(Boolean).join('\n\n')
     const tools = quick ? [continuationTool] : assembly.tools
     let firstAttempt = true
@@ -569,7 +578,7 @@ export class ReactLoopAgent implements Agent {
       const context = this.runtimeContext.project(sections)
       signal.throwIfAborted()
       const startsRequestSeries = firstAttempt
-        && (quick || (supervisor !== undefined && step === 2) || decision.startsRequestSeries === true)
+        && (quick || hintOnly || (step === 2 && (hintEnabled || supervisor !== undefined)) || decision.startsRequestSeries === true)
       const commits = this.systemPrompt.project(renderedPrompt, {
         inHistory: preparedCall?.systemPromptUpdate === 'in-history',
         startsSeries: startsRequestSeries
@@ -709,7 +718,6 @@ export class ReactLoopAgent implements Agent {
           if (final) throw LlmError.fromFailure(finish.failure)
           if (supervisor && diagnostics && !await supervisor.allow({
             requests: diagnostics.requests + 1, steps: step, tools: diagnostics.tools,
-            durationMs: supervisor.elapsed(),
           }, 'The last model request failed before producing a usable response.')) return null
           continue
         }
@@ -730,7 +738,7 @@ export class ReactLoopAgent implements Agent {
           if (diagnostics) diagnostics.continuation = reason ?? 'invalid'
           if (reason === undefined) supervisor.finish('invalid_continuation')
           else if (diagnostics) await supervisor.allow({
-            requests: diagnostics.requests + 1, steps: step + 1, tools: diagnostics.tools, durationMs: supervisor.elapsed(),
+            requests: diagnostics.requests + 1, steps: step + 1, tools: diagnostics.tools,
           }, `Worker requested continuation: ${reason}`, reason)
           return null
         }
@@ -752,7 +760,6 @@ export class ReactLoopAgent implements Agent {
         setProgress(`${progress} Tools requested: ${toolCalls.map(block => block.name).join(', ')}`)
         if (supervisor && diagnostics && (final || !await supervisor.allow({
           requests: diagnostics.requests + 1, steps: step + 1, tools: diagnostics.tools + toolCalls.length,
-          durationMs: supervisor.elapsed(),
         }, progress))) {
           for (const block of toolCalls) {
             const seq = this.session.append('tool/call', { turn, step, callId: block.id, name: block.name, arguments: block.arguments }).seq

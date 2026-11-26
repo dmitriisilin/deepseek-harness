@@ -2088,6 +2088,29 @@ describe('parallel Supervisor integration', () => {
     expect(adapter.requests[2]?.tools ?? []).toEqual([])
   })
 
+  it('adds the lightweight hint only to the first request with regular tools and no Supervisor', async () => {
+    vi.stubEnv('AI_CONTROL_SUPERVISOR', '0')
+    vi.stubEnv('AI_CONTROL_FIRST_RESPONSE_HINT', '1')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    const adapter = new MockAdapter([toolCallResponse('query', 'lookup', {}), textResponse('Verified')])
+    const ctx = await harness(adapter)
+    ctx.tools.register(defineContentToolFixture({
+      name: 'lookup', description: 'Lookup a fact', parameters: {},
+      execute: async () => [{ type: 'text', text: 'source' }],
+    }))
+    const agent = await ctx.agentLoop.create(SessionId('first-hint'), { provider: 'mock', model: 'deepseek-flash' })
+    const idle = waitForIdle(ctx, agent)
+    send(agent, 'Verify a fact')
+    await idle
+    expect(adapter.requests).toHaveLength(2)
+    expect(systemOf(adapter.requests[0])).toContain('Answer briefly and directly')
+    expect(systemOf(adapter.requests[1])).not.toContain('Answer briefly and directly')
+    expect(adapter.requests[0]?.tools?.map(tool => tool.name)).toContain('lookup')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('lets the in-flight Worker and final synthesis finish past the turn budget', async () => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')

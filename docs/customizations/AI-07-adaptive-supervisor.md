@@ -52,9 +52,9 @@ Recheck the admission points for retries, tool batches and subsequent requests w
 
 Supervisor использует отдельный ключ `DEEP_SEEK_Supervisor`. Выбранная модель Worker сохраняется. Решение Supervisor действует на следующие действия цикла, поскольку уже отправленный запрос изменить нельзя.
 
-Бюджет учитывает фактические попытки Worker, открытые шаги, число запрошенных инструментов в партии и время. При достижении мягкой границы выполняется ограниченная переоценка. Supervisor получает исходную задачу, краткий видимый прогресс и счётчики. Продление даёт ограниченную порцию работы в пределах жёсткого лимита. При отказе Supervisor, недостатке данных или исчерпании лимита цикл резервирует один запрос без инструментов для ответа по имеющимся данным или уточнения. Отмена хода прерывает Worker и Supervisor.
+Бюджет учитывает фактические попытки Worker, открытые шаги и число запрошенных инструментов в партии. Время пишется в журнал для сравнения. При достижении мягкой границы выполняется ограниченная переоценка. Supervisor получает исходную задачу, краткий видимый прогресс и счётчики. Продление даёт ограниченную порцию работы в пределах жёсткого лимита. При отказе Supervisor, недостатке данных или исчерпании лимита цикл резервирует один запрос без инструментов для ответа по имеющимся данным или уточнения. Отмена хода прерывает Worker и Supervisor.
 
-Обычный бюджет допускает до 3 запросов, 3 шагов, 4 инструментов и 25 секунд. Запасной бюджет допускает до 2 запросов, 2 шагов, 2 инструментов и 15 секунд. Жёсткий предел исследовательской части — 8 запросов, 7 шагов, 12 инструментов и 90 секунд. Возможны два ограниченных продления. Время проверяется при допуске дополнительных операций. Уже отправленный запрос выполняется со штатными ограничениями модели. Таймаут каждого обращения к Supervisor — 2,5 секунды.
+Обычный бюджет допускает до 3 запросов, 3 шагов и 4 инструментов. Запасной бюджет допускает до 2 запросов, 2 шагов и 2 инструментов. Жёсткий предел исследовательской части — 8 запросов, 7 шагов и 12 инструментов. Возможны два ограниченных продления. Уже отправленный запрос выполняется со штатными ограничениями модели. Таймаут каждого обращения к Supervisor — 2,5 секунды.
 
 ## Parallel Supervisor replay
 
@@ -89,7 +89,7 @@ A quick chat can have an empty working directory. Set `AI_CONTROL_DEPLOYMENT_CON
 
 The first Worker and classifier start concurrently. Classification estimates the initial grant. A valid continuation requests a capability. DIRECT and DEEP are classification labels and cannot veto a valid capability request. UNCLEAR still opens a clarification response. Actual dispatch continues to require a declared tool, a budget grant, and the existing permission policy.
 
-The elapsed budget is checked between operations. A completed Worker response is accepted even if it arrived after that budget. User cancellation remains a distinct outcome.
+The work budget is checked between operations. Policy 7 measures elapsed time for diagnostics only. User cancellation remains a distinct outcome.
 
 The Palisade baseline on the green Dima instance took 22.459 s, with two Worker requests and zero executed tools. The first Worker requested `needs_sources`. The classifier returned DEEP, the second Worker ran without tools, and the reserved 20-second deadline produced `UNKNOWN`. The regression fixture reproduces the admission failure independently of model sampling.
 
@@ -118,3 +118,11 @@ Same recorded question on Flash, replayed as text in three fresh Chrome sessions
 Palisade responses distinguished the seven- and eight-seat layouts, with conclusions scoped to available sources. The replay does not independently certify fit with a particular child seat or market configuration. The fix restores a useful response at the cost of longer completion than the old failing run. The latency to useful text in this case and the unnecessary search on an ambiguous follow-up remain optimization work. The initial DEEP and DIRECT decisions both occurred in successful source replays.
 
 The broad agent-loop, web-tool, and Chat UI run had 824 passing tests. Six existing Chat UI failures matched the same six failures at the previous green release in a focused baseline run. A focused permission test passed both the normal admission and denial branches. An isolated Chrome copy of the interrupted Palisade attempt showed both the saved partial answer and the retry guidance, without displaying UNKNOWN or the internal continuation call.
+
+## Lightweight first-response experiment
+
+Set `AI_CONTROL_FIRST_RESPONSE_HINT=1` and `AI_CONTROL_SUPERVISOR=0` in an isolated profile. Keep `AI_CONTROL_TURN_LOG=1` for measurements. Only the first request gets the brief answer, tool use, and clarification guidance. All normal tools, model settings, and approval checks stay available from the first request. The next request restores the regular prompt. The experiment does not call the Supervisor or impose its request, step, tool, or elapsed-time budgets.
+
+In an isolated Chrome replay on Flash with the same normal model settings, the Palisade question with the hint gave first text at 141.54 s and completed at 149.49 s (11 steps, 18 tool calls). It distinguished generations and included links. The no-hint control was still exploring when the test observer closed at 125.40 s (6 steps, 10 tool calls). Therefore this comparison provides no estimate of the speedup. The earlier budgeted policy had three completed runs in 33.48–41.06 s, with different permissions and starting effort. The hint alone did not reliably prevent extended exploration.
+
+In the same hint-only replay the two vehicle follow-ups took 60.54 and 63.10 s (5 and 4 steps). The no-hint replay of that pair in a separate isolated session took 45.33 and 25.80 s (3 and 2 steps). These are observations from individual samples, not a latency distribution.
