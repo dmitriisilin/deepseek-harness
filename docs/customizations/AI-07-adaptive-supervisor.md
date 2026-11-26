@@ -48,13 +48,13 @@ Recheck the admission points for retries, tool batches and subsequent requests w
 
 ## Контракт параллельного цикла
 
-После принятия пользовательского ввода, включая расшифровку, первый запрос выбранной модели и классификация Supervisor запускаются независимо. Первый запрос получает ограничение выходных токенов до классификации. Первый запрос видит только служебное продолжение. Фактические вызовы инструментов ждут допуска по бюджету и проходят штатные разрешения. Готовый ответ без инструментов завершает ход сразу, отменяя незавершённую классификацию.
+После принятия пользовательского ввода, включая расшифровку, первый запрос выбранной модели и классификация Supervisor запускаются независимо. Первый запрос видит только служебное продолжение. Фактические вызовы инструментов ждут допуска по бюджету и проходят штатные разрешения. Готовый ответ без инструментов завершает ход сразу, отменяя незавершённую классификацию.
 
 Supervisor использует отдельный ключ `DEEP_SEEK_Supervisor`. Выбранная модель Worker сохраняется. Решение Supervisor действует на следующие действия цикла, поскольку уже отправленный запрос изменить нельзя.
 
 Бюджет учитывает фактические попытки Worker, открытые шаги, число запрошенных инструментов в партии и время. При достижении мягкой границы выполняется ограниченная переоценка. Supervisor получает исходную задачу, краткий видимый прогресс и счётчики. Продление даёт ограниченную порцию работы в пределах жёсткого лимита. При отказе Supervisor, недостатке данных или исчерпании лимита цикл резервирует один запрос без инструментов для ответа по имеющимся данным или уточнения. Отмена хода прерывает Worker и Supervisor.
 
-Обычный бюджет допускает до 3 запросов, 3 шагов, 4 инструментов и 25 секунд. Запасной бюджет допускает до 2 запросов, 2 шагов, 2 инструментов и 15 секунд. Жёсткий предел исследовательской части — 8 запросов, 7 шагов, 12 инструментов и 90 секунд. Возможны два ограниченных продления. Для финального запроса отдельно отведено до 35 секунд. Таймаут каждого обращения к Supervisor — 2,5 секунды.
+Обычный бюджет допускает до 3 запросов, 3 шагов, 4 инструментов и 25 секунд. Запасной бюджет допускает до 2 запросов, 2 шагов, 2 инструментов и 15 секунд. Жёсткий предел исследовательской части — 8 запросов, 7 шагов, 12 инструментов и 90 секунд. Возможны два ограниченных продления. Время проверяется при допуске дополнительных операций. Уже отправленный запрос выполняется со штатными ограничениями модели. Таймаут каждого обращения к Supervisor — 2,5 секунды.
 
 ## Parallel Supervisor replay
 
@@ -79,7 +79,7 @@ The Supervisor completed in 1.0–1.8 s per observed call. Usage is available pe
 
 ## Short first request
 
-Flash and Opus start at the lowest advertised effort (off, then low) with a 12-second request deadline. The first request exposes one service-only function, `request_continuation`, with a reason for sources, an action, or deeper reasoning. The harness consumes this signal before execution and logs the reason without presenting a tool row or including the call in future model messages. An admitted continuation restores the selected effort and the normal declaration and permission checks. A denied continuation uses the reserved answer or clarification request. The Supervisor still starts in parallel, using its dedicated credential.
+Flash and Opus start at the lowest advertised effort (off, then low) without a Supervisor request deadline. The first request exposes one service-only function, `request_continuation`, with a reason for sources, an action, or deeper reasoning. The harness consumes this signal before execution and logs the reason without presenting a tool row or including the call in future model messages. An admitted continuation restores the selected effort and the normal declaration and permission checks. A denied continuation uses the reserved answer or clarification request. The Supervisor still starts in parallel, using its dedicated credential.
 
 A first Chrome replay with this policy used the same two vehicle questions. On Flash, first text / total was 1.53 / 5.17 s for insurance and 1.34 / 5.09 s for registration. On Opus it was 3.09 / 8.60 s and 3.22 / 8.86 s. All four turns used one Worker request and zero tools. The explicit request for official DeepSeek API documentation continued to real tools on both models. Flash ran two tools in 16.34 s total; Opus ran one in 16.68 s. These are single runs. A regression test separately verifies that the continuation restores the selected effort.
 
@@ -89,13 +89,13 @@ A quick chat can have an empty working directory. Set `AI_CONTROL_DEPLOYMENT_CON
 
 The first Worker and classifier start concurrently. Classification estimates the initial grant. A valid continuation requests a capability. DIRECT and DEEP are classification labels and cannot veto a valid capability request. UNCLEAR still opens a clarification response. Actual dispatch continues to require a declared tool, a budget grant, and the existing permission policy.
 
-A deadline on an exploratory request ends exploration and reserves synthesis. The final request has a separate deadline. If that request times out, retain any visible text and give a concrete explanation. User cancellation remains a distinct outcome.
+The elapsed budget is checked between operations. A completed Worker response is accepted even if it arrived after that budget. User cancellation remains a distinct outcome.
 
 The Palisade baseline on the green Dima instance took 22.459 s, with two Worker requests and zero executed tools. The first Worker requested `needs_sources`. The classifier returned DEEP, the second Worker ran without tools, and the reserved 20-second deadline produced `UNKNOWN`. The regression fixture reproduces the admission failure independently of model sampling.
 
 Source continuation opens only `web_search` and `web_fetch` from the normal scoped tool set. Its initial grant is still bounded and can be reviewed. A hard boundary is rechecked after waiting for classification or review. The review receives counts of successful and failed tool outcomes as well as the available progress summary. Decisions from the dedicated model are requested as JSON and validated against the allowed decision vocabulary.
 
-Final synthesis uses the lowest supported effort and has a separate 35-second deadline. A timeout persists any visible partial response, records `TIMEOUT`, and explains that the user can retry. A user cancellation still records the ordinary aborted outcome.
+Policy 5 reserved a 35-second deadline for final synthesis. Policy 6 removes that deadline, the 12-second initial Worker deadline and the Supervisor output cap. Final synthesis uses the selected effort. The provider and explicit user cancellation still control their own failure or cancellation.
 
 ## Palisade regression replay
 

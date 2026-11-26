@@ -44,7 +44,7 @@ import { ReactLoopInbox } from './inbox.ts'
 import { RuntimeContextProjection } from './runtime-context.ts'
 import { AssistantStreamAttempt } from './assistant-stream.ts'
 import { SystemPromptProjection } from './runtime-context.ts'
-import { SupervisorBudget, WORKER_OUTPUT_LIMIT, continuationReason } from './supervisor.ts'
+import { SupervisorBudget, continuationReason } from './supervisor.ts'
 
 /** Projected facts consumed by this driver; registration stays with the factory. */
 interface LoopProjections {
@@ -118,14 +118,6 @@ const quickPrompt = [
   'For product comparisons that vary by version, market, or year, use needs_sources when evidence is missing.',
   'Invoke the declared function through the tool interface. Never print tool syntax in your answer.',
 ].join(' ')
-
-function finalDeadlineError(cause: unknown): LlmError {
-  return new LlmError(
-    'The model ran out of time to finish the answer. Any partial answer is kept. Retry the question to continue.',
-    'TIMEOUT',
-    { cause },
-  )
-}
 
 /** Remove adapter-derived values before plugins propose the next request config. */
 function requestProposal(header: EpochHeader): LlmCallConfig {
@@ -479,7 +471,7 @@ export class ReactLoopAgent implements Agent {
             } catch (recoveryError: unknown) {
               throw new AggregateError([error, recoveryError], 'Step failed and its pending tool results could not be recorded', { cause: error })
             }
-            if (supervisor?.reason !== 'tool_deadline' || signal.aborted) throw error
+            throw error
           } finally {
             stopRecovery()
             this.session.append('step/end', { turn, step })
@@ -526,7 +518,7 @@ export class ReactLoopAgent implements Agent {
         const { started, ...metrics } = diagnostics
         console.info(JSON.stringify({
           event: 'ai-control/turn', sessionId: this.session.id, turn, status: turnEnds?.kind,
-          policyVersion: supervisor ? 5 : 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
+          policyVersion: supervisor ? 6 : 2, steps: phase.step, durationMs: Math.round(performance.now() - started), ...metrics,
         }))
       }
       try {
@@ -559,7 +551,7 @@ export class ReactLoopAgent implements Agent {
     const final = supervisor?.final === true
     const quick = supervisor !== undefined && step === 1
       && ['deepseek-flash', 'claude-opus-5-5'].includes(decision.selection.model)
-    const light = quick || final
+    const light = quick
     const deploymentContext = supervisor ? process.env.AI_CONTROL_DEPLOYMENT_CONTEXT?.trim().slice(0, 2000) : undefined
     const renderedPrompt = [
       renderPrompt(assembly),
@@ -569,19 +561,7 @@ export class ReactLoopAgent implements Agent {
     const tools = quick ? [continuationTool] : assembly.tools
     let firstAttempt = true
     while (true) {
-      const requestSignal = supervisor?.workSignal(signal, quick ? 12000 : undefined) ?? signal
-      const prepared = await this.prepareRequest(
-        turn, step, decision.selection, requestSignal, supervisor ? WORKER_OUTPUT_LIMIT : undefined, light,
-      ).catch((error: unknown) => {
-        if (supervisor && requestSignal.aborted && !signal.aborted) {
-          if (final) throw finalDeadlineError(error)
-          supervisor.finish('worker_deadline')
-          return undefined
-        }
-        throw error
-      })
-      if (prepared === undefined) return null
-      const { config, preparedCall } = prepared
+      const { config, preparedCall } = await this.prepareRequest(turn, step, decision.selection, signal, light)
       const currentContext = this.loopCtx.systemPrompt.refreshContext(assembly, {
         ...assembleContextFor(this, signal), modelSelection: decision.selection,
       })
@@ -628,7 +608,7 @@ export class ReactLoopAgent implements Agent {
       }
       firstAttempt = false
       const request = this.buildRequest(
-        config, preparedCall, tools, { turn, step }, startsRequestSeries, requestSignal,
+        config, preparedCall, tools, { turn, step }, startsRequestSeries, signal,
         light ? decision.selection.reasoningEffort ?? null : undefined,
       )
       const live = new AssistantStreamAttempt(
@@ -652,24 +632,18 @@ export class ReactLoopAgent implements Agent {
         live.start()
         started = true
         for await (const chunk of stream) {
-          requestSignal.throwIfAborted()
+          signal.throwIfAborted()
           if (quick && chunk.type === 'block-start' && chunk.blockType === 'tool-call') controlBlocks.add(chunk.index)
           live.push(chunk, !('index' in chunk && controlBlocks.has(chunk.index)))
           if (diagnostics && diagnostics.firstTextMs === undefined && chunk.type === 'text-delta' && chunk.text.trim()) {
             diagnostics.firstTextMs = Math.round(performance.now() - diagnostics.started)
           }
         }
-        requestSignal.throwIfAborted()
+        signal.throwIfAborted()
       } catch (error: unknown) {
-        const deadline = supervisor !== undefined && requestSignal.aborted && !signal.aborted
-        if (!started) {
-          if (!deadline) throw error
-          if (final) throw finalDeadlineError(error)
-          supervisor.finish('worker_deadline')
-          return null
-        }
+        if (!started) throw error
         try {
-          if (signal.aborted || (final && deadline)) {
+          if (signal.aborted) {
             const content = live.interruptedBlocks()
             if (content.length > 0) {
               live.settle('assistant/message', () => this.session.append('assistant/message', {
@@ -705,11 +679,6 @@ export class ReactLoopAgent implements Agent {
             'Assistant stream failed and its durable settlement was rejected',
             { cause: error },
           )
-        }
-        if (deadline) {
-          if (final) throw finalDeadlineError(error)
-          supervisor.finish('worker_deadline')
-          return null
         }
         throw error
       } finally {
@@ -797,12 +766,11 @@ export class ReactLoopAgent implements Agent {
           return final ? { kind: 'completed' } : null
         }
         const toolsStarted = performance.now()
-        const toolSignal = supervisor?.workSignal(signal) ?? signal
         if (diagnostics) diagnostics.tools += toolCalls.length
         const maxParallelToolCalls = this.loopCtx.agentLoop.config.maxParallelToolCalls.get()
         try {
           const result = await this.loopCtx.tools.execute({
-            calls: toolCalls, signal: toolSignal, agent: this, log: { turn, step },
+            calls: toolCalls, signal, agent: this, log: { turn, step },
             maxParallelToolCalls, toolSet: decision.toolSet,
           })
           for (const context of result.additionalContexts) {
@@ -812,11 +780,9 @@ export class ReactLoopAgent implements Agent {
             const failed = result.results.filter(item => item.result.isError).length
             supervisor.noteTools(result.results.length - failed, failed)
             setProgress(`${progress} Tool outcomes: ${result.results.length - failed} succeeded, ${failed} failed.`)
-            if (toolSignal.aborted && !signal.aborted) supervisor.finish('tool_deadline')
           }
           return result.concluded ? { kind: 'completed' } : null
         } catch (error: unknown) {
-          if (supervisor && toolSignal.aborted && !signal.aborted) supervisor.finish('tool_deadline')
           if (!(error instanceof ToolBatchExecutionError)) throw error
           for (const context of error.partial.additionalContexts) {
             this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context])
@@ -838,7 +804,6 @@ export class ReactLoopAgent implements Agent {
     step: number,
     selection: Readonly<ModelSelection>,
     signal: AbortSignal,
-    outputLimit?: number,
     light = false,
   ): Promise<{ config: LlmCallConfig; preparedCall?: PreparedLlmCall }> {
     const { session } = this
@@ -852,13 +817,11 @@ export class ReactLoopAgent implements Agent {
       : maxTokens === undefined ? {} : { maxTokens }
     const { provider: _provider, model: _model, reasoningEffort: _effort, ...controls } = persisted
     const seedConfig = deepFreeze(structuredClone({ ...controls, ...selection }))
-    const proposal = await this.dispatch.waterfall(
+    const proposedConfig = await this.dispatch.waterfall(
       'agent/request', { turn, step, signal },
       () => Promise.resolve(seedConfig),
     )
     signal.throwIfAborted()
-    const proposedConfig = outputLimit === undefined ? proposal
-      : { ...proposal, maxTokens: Math.min(this.options.maxTokens ?? outputLimit, proposal.maxTokens ?? outputLimit, outputLimit) }
     if (proposedConfig.provider !== selection.provider || proposedConfig.model !== selection.model) {
       throw new Error(`agent "${this.id}": agent/request proposed "${proposedConfig.provider}/${proposedConfig.model}" after step preparation fixed "${selection.provider}/${selection.model}"; use agent.model.select() before step preparation`)
     }

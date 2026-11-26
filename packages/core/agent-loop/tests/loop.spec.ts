@@ -2003,7 +2003,6 @@ describe('parallel Supervisor integration', () => {
     expect(classifierCancelled).toBe(true)
     expect(adapter.requests).toHaveLength(1)
     expect(adapter.requests[0]?.model).toBe(model)
-    expect(adapter.requests[0]?.maxTokens).toBeLessThanOrEqual(8192)
   })
 
   it.each([false, true])('runs an admitted continuation with normal permissions (denied: %s)', async (denied) => {
@@ -2089,40 +2088,35 @@ describe('parallel Supervisor integration', () => {
     expect(adapter.requests[2]?.tools ?? []).toEqual([])
   })
 
-  it.each([true, false])('reports a final deadline as TIMEOUT and keeps visible text (%s)', async (partial) => {
+  it('lets the in-flight Worker and final synthesis finish past the turn budget', async () => {
     vi.stubEnv('AI_CONTROL_SUPERVISOR', '1')
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: 'DIRECT' } }] })))
-    const timer = AbortSignal.timeout.bind(AbortSignal)
-    const deadline = new AbortController()
-    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(ms => ms === 35000 ? deadline.signal : timer(ms))
-    onTestFinished(() => { timeout.mockRestore(); vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: 'ACTION' } }] })))
+    const clock = vi.spyOn(performance, 'now')
+    const timers = vi.spyOn(AbortSignal, 'timeout')
+    onTestFinished(() => { clock.mockRestore(); timers.mockRestore(); vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+    clock.mockReturnValue(1000)
     const adapter = new MockAdapter([
-      toolCallResponse('request', 'lookup', {}),
-      { hangAfter: partial ? textResponse('partial').slice(0, -1) : [] },
-    ])
+      () => {
+        clock.mockReturnValue(92000)
+        return toolCallResponse('request', 'request_continuation', { reason: 'needs_sources' })
+      },
+      () => {
+        clock.mockReturnValue(190000)
+        return textResponse('Finished despite the elapsed budget')
+      },
+    ], undefined, 32000)
     const ctx = await harness(adapter)
-    const agent = await ctx.agentLoop.create(SessionId('final-deadline'), { provider: 'mock', model: 'mock' })
-    const reachedFinal = Promise.withResolvers<undefined>()
-    let finalAttempt: string | undefined
-    ctx.on('agent/assistant-stream', ({ frame }) => {
-      if (frame.type === 'start' && frame.step === 2) {
-        finalAttempt = frame.attemptId
-        if (!partial) reachedFinal.resolve(undefined)
-      } else if (frame.type === 'chunk' && frame.attemptId === finalAttempt && frame.chunk.type === 'text-delta') {
-        reachedFinal.resolve(undefined)
-      }
-    })
+    const agent = await ctx.agentLoop.create(SessionId('worker-deadline'), { provider: 'mock', model: 'deepseek-flash' })
     const idle = waitForIdle(ctx, agent)
     send(agent, 'Explain a topic')
-    await reachedFinal.promise
-    deadline.abort(new DOMException('test deadline', 'TimeoutError'))
     await idle
+    expect(adapter.requests.map(request => request.maxTokens)).toEqual([32000, 32000])
+    expect(adapter.requests[1]?.tools ?? []).toEqual([])
+    expect(timers.mock.calls.flat().filter(ms => ms !== 2500)).toEqual([])
     const events = agent.session.snapshotEvents()
-    expect(events.find(event => event.type === 'turn/end')?.data.reason).toMatchObject({
-      kind: 'error', error: { code: 'TIMEOUT' },
-    })
-    expect(events.some(event => event.type === 'assistant/message' && event.data.interrupted === true)).toBe(partial)
+    expect(events.find(event => event.type === 'turn/end')?.data.reason).toMatchObject({ kind: 'completed' })
+    expect(events.some(event => event.type === 'assistant/message' && event.data.step === 2)).toBe(true)
   })
 
   it('aborts both in-flight requests on user cancellation', async () => {

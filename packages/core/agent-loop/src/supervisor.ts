@@ -124,7 +124,6 @@ export function continuationReason(raw: string): ContinuationReason | undefined 
   return undefined
 }
 
-export const WORKER_OUTPUT_LIMIT = 8192
 const hard = { requests: 8, steps: 7, tools: 12, durationMs: 90000 }
 type Spend = { requests: number; steps: number; tools: number; durationMs: number }
 
@@ -268,11 +267,6 @@ export class SupervisorBudget {
 
   elapsed(): number {
     return performance.now() - this.started
-  }
-
-  workSignal(parent: AbortSignal, cap = Infinity): AbortSignal {
-    const duration = this.final ? 35000 : Math.max(1, Math.ceil(hard.durationMs - this.elapsed()))
-    return AbortSignal.any([parent, AbortSignal.timeout(Math.min(duration, cap))])
   }
 
   finish(reason: string): false {
