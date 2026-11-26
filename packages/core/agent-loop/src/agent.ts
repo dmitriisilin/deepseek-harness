@@ -606,7 +606,7 @@ export class ReactLoopAgent implements Agent {
       requests: (diagnostics?.requests ?? 0) + 2, steps: step, tools: diagnostics?.tools ?? 0,
     })
     const warnUnrevised = (message: ReturnType<typeof createAssistantMessage>) => createAssistantMessage({
-      source: message.source,
+      source: { provider: message.source.provider, model: message.source.model },
       content: [{ type: 'text', text: 'The source check flagged this answer, and the attempted correction did not complete.' }, ...message.content],
     })
     while (true) {
@@ -820,7 +820,7 @@ export class ReactLoopAgent implements Agent {
         const synthesis = auditSynthesis && !provisionalSynthesis
           ? message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ').trim()
           : ''
-        if (synthesis && finish.kind !== 'max-tokens' && await supervisor.synthesisNeedsRevision(synthesis)) {
+        if (synthesis && finish.kind !== 'max-tokens' && await supervisor?.synthesisNeedsRevision(synthesis)) {
           live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
           provisionalSynthesis = message
           this.session.append('user/message', createUserMessage({
