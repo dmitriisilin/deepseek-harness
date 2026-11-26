@@ -139,7 +139,9 @@ const evidenceResponsePrompt = [
   'A successful lookup does not establish a claim unless its result supports that claim.',
   'If results are empty, conflicting, or inaccessible, state the remaining uncertainty and give useful conditional guidance.',
   'Attach the relevant source to each decisive external claim when a source is available.',
-  'Keep claims within the scope of what you verified. State what would need to be checked before applying a conclusion outside that scope.',
+  'Keep claims within the scope of what you verified, including in the opening summary and recommendations.',
+  'Preserve each source’s operating conditions and exceptions. An instruction valid under one condition does not establish that it is valid under a different condition.',
+  'If the sources cover only part of the question, answer that part concretely and identify the minimum information needed to resolve the rest.',
 ].join(' ')
 
 /** Remove adapter-derived values before plugins propose the next request config. */
@@ -635,7 +637,9 @@ export class ReactLoopAgent implements Agent {
           'This is the final response. No tools are available. Never print commands as tool calls or invent inspection results.',
           supervisor?.reason === 'clarify' || supervisor?.reason === 'ambiguous_input'
             ? 'Ask one concise question if the available information is insufficient.'
-            : 'Give the useful answer first, then brief supporting evidence. State what is missing or unverified.',
+            : evidencePolicy && supervisor?.continuation === 'needs_sources'
+              ? 'Lead with the best supported conclusion and the scope that makes it true. Cite the evidence for decisive claims. If sources disagree or do not cover the requested case, distinguish the documented cases and state what remains unresolved.'
+              : 'Give the useful answer first, then brief supporting evidence. State what is missing or unverified.',
         ].join(' ')
         this.session.append('user/message', createUserMessage({
           source: { kind: 'runtime-context', form: 'instructions' }, content: [{ type: 'text', text: instruction }],
@@ -773,7 +777,8 @@ export class ReactLoopAgent implements Agent {
         if (quick && message.content.some(block => block.type === 'tool-call')) {
           live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
           const call = message.content.find(block => block.type === 'tool-call' && block.name === continuationTool.name)
-          const reason = call?.type === 'tool-call' ? continuationReason(call.arguments) : undefined
+          const requested = call?.type === 'tool-call' ? continuationReason(call.arguments) : undefined
+          const reason = requested ?? (evidenceGate && call ? await supervisor.recoverContinuation() : undefined)
           setProgress(reason ? `Worker requested continuation: ${reason}` : 'Invalid continuation request')
           if (diagnostics) diagnostics.continuation = reason ?? 'invalid'
           if (reason === undefined) supervisor.finish('invalid_continuation')

@@ -133,6 +133,30 @@ describe('per-turn Supervisor budget', () => {
     }
   })
 
+  it.each([
+    ['SOURCES', 'needs_sources'],
+    ['ACTION', 'needs_action'],
+    ['invalid output', 'needs_reasoning'],
+    ['SELF_CONTAINED', undefined],
+    ['UNCLEAR', undefined],
+  ] as const)('recovers a malformed Worker continuation from %s', async (label, expected) => {
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(label)
+    })
+    try {
+      budget.start([user], undefined)
+      const continuation = await budget.recoverContinuation()
+      expect(continuation).toBe(expected)
+      if (continuation) {
+        await expect(budget.allow({ requests: 2, steps: 2, tools: 0 }, '', continuation)).resolves.toBe(true)
+        await expect(budget.allow({ requests: 3, steps: 3, tools: 1 }, '')).resolves.toBe(true)
+        expect(budget.calls).toHaveLength(1)
+      }
+    } finally {
+      budget.close()
+    }
+  })
+
   it('reserves room for an admitted source operation when classification is unavailable', async () => {
     vi.stubEnv('AI_CONTROL_FIRST_EVIDENCE_GATE', '1')
     const budget = new SupervisorBudget(new AbortController().signal, async function* () {
@@ -184,6 +208,7 @@ describe('per-turn Supervisor budget', () => {
       const request = JSON.stringify(transport.mock.calls[1]?.[0].messages)
       expect(request).toContain('repeatsSuccessfulOperation')
       const review = transport.mock.calls[1]?.[0].messages[0]?.content[0]
+      expect(review?.type === 'text' && JSON.parse(review.text).sourceProgress).toEqual({ hasDiscovery: false, documentsRead: 0 })
       expect(review?.type === 'text' && JSON.parse(review.text).nextOperations).toEqual([
         { tool: 'lookup', repeatsSuccessfulOperation: true },
         { tool: 'lookup', repeatsSuccessfulOperation: false },
