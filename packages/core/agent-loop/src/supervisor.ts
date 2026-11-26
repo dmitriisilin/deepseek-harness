@@ -279,7 +279,7 @@ export class SupervisorBudget {
       && this.sourceExcerpts.length > 0 && !this.hardLimitExceeded(spend)
   }
 
-  async synthesisNeedsRevision(draft: string): Promise<boolean> {
+  async synthesisRevisionAdvice(draft: string): Promise<string | undefined> {
     const started = performance.now()
     const call = this.record('synthesis', started)
     const excerptTerms = new Set(`${this.task} ${draft}`.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu))
@@ -294,6 +294,8 @@ export class SupervisorBudget {
           'Choose ACCEPT only when each decisive external claim is supported by the excerpts within the conditions stated, or explicitly left unresolved.',
           'Choose REVISE when a decisive conclusion contradicts a source, omits a material condition, overstates certainty, or takes an older source as proof of a current claim.',
           'The existence of a link does not establish correctness, applicability, or current validity.',
+          'For revisions, use REVISE: followed by one short sentence naming the decisive unsupported claim or missing condition.',
+          'Do not propose facts absent from the excerpts.',
         ].join(' '),
         messages: [createUserMessage({
           source: { kind: 'user' },
@@ -304,13 +306,14 @@ export class SupervisorBudget {
         })],
       }, call)) assembler.push(chunk)
       signal.throwIfAborted()
-      const result = assembler.blocks().map(block => block.type === 'text' ? block.text : '').join('').trim().toLowerCase()
-      call.result = result === 'revise' || result === 'accept' ? result : 'invalid_output'
-      return result === 'revise'
+      const result = assembler.blocks().map(block => block.type === 'text' ? block.text : '').join('').trim()
+      const revision = /^revise(?:\s*:\s*([\s\S]+))?$/i.exec(result)
+      call.result = revision ? 'revise' : /^accept$/i.test(result) ? 'accept' : 'invalid_output'
+      return revision ? revision[1]?.trim().slice(0, 240) || 'A decisive claim was not supported under the stated conditions.' : undefined
     } catch {
       this.signal.throwIfAborted()
       call.result = 'review_unavailable'
-      return false
+      return undefined
     } finally {
       call.durationMs = Math.round(performance.now() - started)
     }

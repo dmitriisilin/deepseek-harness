@@ -828,12 +828,20 @@ export class ReactLoopAgent implements Agent {
         const synthesis = auditSynthesis && !provisionalSynthesis
           ? message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(' ').trim()
           : ''
-        if (synthesis && finish.kind !== 'max-tokens' && await supervisor?.synthesisNeedsRevision(synthesis)) {
+        const revisionAdvice = synthesis && finish.kind !== 'max-tokens'
+          ? await supervisor?.synthesisRevisionAdvice(synthesis)
+          : undefined
+        if (revisionAdvice) {
           live.settle('assistant/attempt', () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq)
           provisionalSynthesis = message
           this.session.append('user/message', createUserMessage({
             source: { kind: 'runtime-context', form: 'instructions' },
-            content: [{ type: 'text', text: 'Reconsider the final answer using the actual document excerpts. A provisional synthesis was flagged for a material contradiction or for exceeding the scope of the evidence. In the opening conclusion distinguish the documented cases, preserve their conditions, and state what remains unresolved.' }],
+            content: [{ type: 'text', text: [
+              'For this revision only, reconsider the final answer using the actual document excerpts.',
+              'A provisional synthesis was flagged. Treat the following note as an unverified observation to check against the sources:',
+              JSON.stringify(revisionAdvice),
+              'In the opening conclusion distinguish the documented cases, preserve their conditions, and state what remains unresolved.',
+            ].join(' ') }],
           }), { surfaceOp: 'append' })
           continue
         }

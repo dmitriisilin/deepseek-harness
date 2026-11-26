@@ -2204,7 +2204,7 @@ describe('parallel Supervisor integration', () => {
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
     onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
     vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
-    const responses = ['SOURCES', 'FINISH', 'REVISE']
+    const responses = ['SOURCES', 'FINISH', 'REVISE: The document only covers one version.']
     const supervisorFetch = vi.fn(async () => Response.json({
       choices: [{ message: { content: JSON.stringify({ decision: responses.shift() ?? 'ACCEPT' }) } }],
     }))
@@ -2249,7 +2249,10 @@ describe('parallel Supervisor integration', () => {
     expect(execute).toHaveBeenCalledOnce()
     expect(adapter.requests).toHaveLength(6)
     expect(adapter.requests.at(-1)?.tools ?? []).toEqual([])
-    expect(JSON.stringify(adapter.requests.at(-1)?.messages)).toContain('provisional synthesis was flagged')
+    const revisionMessages = JSON.stringify(adapter.requests.at(-1)?.messages)
+    expect(revisionMessages).toContain('provisional synthesis was flagged')
+    expect(revisionMessages).toContain('The document only covers one version.')
+    expect(JSON.stringify(adapter.requests.at(-2)?.messages)).not.toContain('The document only covers one version.')
     expect(JSON.stringify(frames)).not.toContain('Unsupported universal conclusion')
     const messages = JSON.stringify(agent.session.deriveMessages())
     if (outcome === 'success') {

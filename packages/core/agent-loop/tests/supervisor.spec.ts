@@ -265,7 +265,7 @@ describe('per-turn Supervisor budget', () => {
 
   it('checks synthesis from read excerpts only while a bounded revision fits', async () => {
     vi.stubEnv('AI_CONTROL_SYNTHESIS_AUDIT', '1')
-    const replies = ['SOURCES', 'REVISE']
+    const replies = ['SOURCES', 'REVISE: The excerpt limits this operation.']
     const transport = vi.fn(async function* (_options: GenerateOptions) {
       yield* textResponse(replies.shift() ?? 'ACCEPT')
     })
@@ -279,7 +279,7 @@ describe('per-turn Supervisor budget', () => {
       budget.notePublicSourceExcerpt('https://example.com/reference', 'Documented conditions')
       expect(budget.canAuditSynthesis({ ...spend, requests: 9 })).toBe(false)
       expect(budget.canAuditSynthesis(spend)).toBe(true)
-      await expect(budget.synthesisNeedsRevision('Universal statement')).resolves.toBe(true)
+      await expect(budget.synthesisRevisionAdvice('Universal statement')).resolves.toBe('The excerpt limits this operation.')
       const payload = transport.mock.calls[1]?.[0].messages[0]?.content[0]
       expect(payload?.type === 'text' && JSON.parse(payload.text).excerpts).toEqual(['Documented conditions'])
     } finally {
@@ -296,7 +296,7 @@ describe('per-turn Supervisor budget', () => {
       const url = 'https://example.com/reference'
       budget.noteDiscoveredSourceUrls([url])
       budget.notePublicSourceExcerpt(url, 'navigation '.repeat(1200) + 'Emergency actuator interlock requires disconnection.')
-      await budget.synthesisNeedsRevision('The emergency actuator interlock can be used without disconnection.')
+      await budget.synthesisRevisionAdvice('The emergency actuator interlock can be used without disconnection.')
       const payload = transport.mock.calls[0]?.[0].messages[0]?.content[0]
       const [excerpt] = payload?.type === 'text' ? JSON.parse(payload.text).excerpts as string[] : []
       expect(excerpt).toContain('Emergency actuator interlock requires disconnection.')

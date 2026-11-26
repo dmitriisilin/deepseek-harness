@@ -254,3 +254,7 @@ On the same Flash replay, the registration follow-up applied the changed insuran
 | Percentage | 1.55 / 2.13 | 1 / 1 / 0 | Pass. |
 | Box count and follow-up | 1.13 / 1.41, 0.86 / 1.27 | 1 / 1 / 0 each | Pass on both turns. |
 | Python source verification | 22.79 / 26.79 | 4 / 4 / 3 | Pass. Distinguished the language contract and implementation and reported the truncated read. |
+
+A controlled two-by-two replay held the draft and source fixed and isolated the stricter audit wording from the excerpt selection. Each combination was repeated twice. The prior wording returned ACCEPT on all four calls, and affirmative support wording returned REVISE on all four, regardless of excerpt selection. This isolates the detected effect to wording for this fixture.
+
+The first live Flash turn with the stricter audit requested a revision. It took 111.63 s with six Worker requests and three source operations. The revised answer narrowed several claims, but continued to conflate a vertical seatback with permission to move an occupied seat. The revision therefore failed the scope rubric. To make the correction actionable, the auditor now returns the specific missing condition or unsupported claim alongside the verdict. The tool-free Worker treats it as an observation to verify against its original evidence.
