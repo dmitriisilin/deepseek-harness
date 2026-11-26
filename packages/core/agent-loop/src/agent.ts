@@ -74,6 +74,8 @@ interface TurnDiagnostics {
     calls: Omit<SupervisorBudget['calls'][number], 'started'>[]
     extensions: number
     sourceOpeningReserved: boolean
+    sourceProposalReserved: boolean
+    sourceDocumentsRead: number
     successfulTools: number
     failedTools: number
     reason?: string | undefined
@@ -547,6 +549,8 @@ export class ReactLoopAgent implements Agent {
           calls: supervisor.calls.map(({ started: _started, ...call }) => call),
           extensions: supervisor.extensions,
           sourceOpeningReserved: supervisor.sourceOpeningReserved,
+          sourceProposalReserved: supervisor.sourceProposalReserved,
+          sourceDocumentsRead: supervisor.sourceDocumentsRead,
           successfulTools: supervisor.successfulTools,
           failedTools: supervisor.failedTools,
           reason: supervisor.reason ?? turnEnds?.kind,

@@ -189,6 +189,7 @@ export class SupervisorBudget {
   private readonly sourceExcerpts = new Map<string, string>()
   private readonly discoveredSourceUrls = new Set<string>()
   sourceOpeningReserved = false
+  sourceProposalReserved = false
   private readonly successfulOperations = new Set<string>()
   readonly calls: SupervisorCall[] = []
   extensions = 0
@@ -407,6 +408,14 @@ export class SupervisorBudget {
     if (continuation !== undefined) this.continuation = continuation
     const limit = this.limit
     if (Object.keys(limit).every(key => spend[key as keyof Spend] <= limit[key as keyof Spend])) return true
+    if (this.progressReview && process.env.AI_CONTROL_SOURCE_PROPOSAL === '1'
+      && this.continuation === 'needs_sources' && this.sourceDiscoverySucceeded && this.documentsRead.size === 0
+      && !this.sourceProposalReserved && proposed === undefined
+      && spend.steps > limit.steps && spend.tools <= limit.tools && spend.requests < hard.requests) {
+      this.sourceProposalReserved = true
+      this.limit = { ...limit, requests: Math.max(limit.requests, spend.requests), steps: Math.max(limit.steps, spend.steps) }
+      return true
+    }
     // A search discovers leads. Reserve one opportunity to read a discovered source.
     if (this.progressReview && this.continuation === 'needs_sources' && this.sourceDiscoverySucceeded
       && !this.sourceOpeningReserved && proposed && proposed.length > 0 && proposed.length <= 2
@@ -503,6 +512,10 @@ export class SupervisorBudget {
 
   private operationKey(call: WorkCall): string {
     return JSON.stringify([call.name, call.arguments])
+  }
+
+  get sourceDocumentsRead(): number {
+    return this.documentsRead.size
   }
 
   private hardLimitExceeded(spend: Spend): boolean {

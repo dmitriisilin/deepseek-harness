@@ -288,6 +288,51 @@ describe('per-turn Supervisor budget', () => {
     }
   })
 
+  it.each([true, false])('reserves a single source proposal when discovery succeeded (%s)', async (foundSources) => {
+    vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
+    vi.stubEnv('AI_CONTROL_SOURCE_PROPOSAL', '1')
+    const replies = ['SOURCES', 'FINISH']
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(replies.shift() ?? '')
+    })
+    try {
+      budget.start([user], undefined)
+      await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
+      budget.noteSuccessfulOperations([], new Set(), foundSources)
+      await expect(budget.allow({ requests: 4, steps: 4, tools: 1 }, 'Discovery attempted')).resolves.toBe(foundSources)
+      if (foundSources) {
+        expect(budget.calls).toHaveLength(1)
+        await expect(budget.allow({ requests: 5, steps: 5, tools: 1 }, 'Still no readable text')).resolves.toBe(false)
+      }
+      expect(budget.reason).toBe('finish')
+    } finally {
+      budget.close()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.each([
+    { requests: 4, steps: 3, tools: 1 },
+    { requests: 8, steps: 4, tools: 1 },
+  ])('preserves the source proposal reservation boundary (%j)', async (nextSpend) => {
+    vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
+    vi.stubEnv('AI_CONTROL_SOURCE_PROPOSAL', '1')
+    const replies = ['SOURCES', 'FINISH']
+    const budget = new SupervisorBudget(new AbortController().signal, async function* () {
+      yield* textResponse(replies.shift() ?? '')
+    })
+    try {
+      budget.start([user], undefined)
+      await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
+      budget.noteSuccessfulOperations([], new Set(), true)
+      await expect(budget.allow(nextSpend, 'Search found leads')).resolves.toBe(false)
+      expect(budget.sourceProposalReserved).toBe(false)
+    } finally {
+      budget.close()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('checks synthesis from read excerpts only while a bounded revision fits', async () => {
     vi.stubEnv('AI_CONTROL_SYNTHESIS_AUDIT', '1')
     const replies = ['SOURCES', 'REVISE: The excerpt limits this operation.']
