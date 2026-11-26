@@ -184,7 +184,7 @@ export class SupervisorBudget {
   private readonly progressReview = process.env.AI_CONTROL_PROGRESS_REVIEW === '1'
   private sourceDiscoverySucceeded = false
   private documentsRead = 0
-  private readonly sourceExcerpts: string[] = []
+  private readonly sourceExcerpts = new Map<string, string>()
   private readonly discoveredSourceUrls = new Set<string>()
   sourceOpeningReserved = false
   private readonly successfulOperations = new Set<string>()
@@ -289,13 +289,14 @@ export class SupervisorBudget {
     const normalized = URL.parse(url)
     if (!normalized) return
     normalized.hash = ''
-    if (!this.discoveredSourceUrls.has(normalized.href) || this.sourceExcerpts.length >= 3 || !text.trim()) return
-    this.sourceExcerpts.push(text.slice(0, 50000))
+    if (!this.discoveredSourceUrls.has(normalized.href) || this.sourceExcerpts.has(normalized.href)
+      || this.sourceExcerpts.size >= 3 || !text.trim()) return
+    this.sourceExcerpts.set(normalized.href, text.slice(0, 50000))
   }
 
   private hasSourceAuditContext(): boolean {
     return process.env.AI_CONTROL_SYNTHESIS_AUDIT === '1' && this.continuation === 'needs_sources'
-      && (this.sourceDiscoverySucceeded || this.sourceExcerpts.length > 0)
+      && (this.sourceDiscoverySucceeded || this.sourceExcerpts.size > 0)
   }
 
   canAuditSynthesis(spend: Spend): boolean {
@@ -332,8 +333,8 @@ export class SupervisorBudget {
           content: [{ type: 'text', text: JSON.stringify({
             task: this.task, previousTask: this.previousTask,
             draft: draft.length <= 5000 ? draft : `${draft.slice(0, 3400)}\n[…]\n${draft.slice(-1500)}`,
-            sourceCoverage: suppliedOnly ? 'supplied_material' : this.sourceExcerpts.length > 0 ? 'document_excerpts' : 'discovery_only',
-            excerpts: this.sourceExcerpts.map(source => auditExcerpt(source, excerptTerms)),
+            sourceCoverage: suppliedOnly ? 'supplied_material' : this.sourceExcerpts.size > 0 ? 'document_excerpts' : 'discovery_only',
+            excerpts: Array.from(this.sourceExcerpts, ([url, source]) => ({ url, excerpt: auditExcerpt(source, excerptTerms) })),
           }) }],
         })],
       }, call)) assembler.push(chunk)

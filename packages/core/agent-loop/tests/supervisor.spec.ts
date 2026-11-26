@@ -277,11 +277,12 @@ describe('per-turn Supervisor budget', () => {
       budget.noteDiscoveredSourceUrls(['https://example.com/reference#section'])
       budget.notePublicSourceExcerpt('https://local.example/resource', 'Undiscovered resource')
       budget.notePublicSourceExcerpt('https://example.com/reference', 'Documented conditions')
+      budget.notePublicSourceExcerpt('https://example.com/reference#same-page', 'Repeated read')
       expect(budget.canAuditSynthesis({ ...spend, requests: 9 })).toBe(false)
       expect(budget.canAuditSynthesis(spend)).toBe(true)
       await expect(budget.synthesisRevisionAdvice('Universal statement')).resolves.toBe('The excerpt limits this operation.')
       const payload = transport.mock.calls[1]?.[0].messages[0]?.content[0]
-      expect(payload?.type === 'text' && JSON.parse(payload.text).excerpts).toEqual(['Documented conditions'])
+      expect(payload?.type === 'text' && JSON.parse(payload.text).excerpts).toEqual([{ url: 'https://example.com/reference', excerpt: 'Documented conditions' }])
       await expect(budget.allow({ requests: 7, steps: 6, tools: 2 }, 'Another exploratory request')).resolves.toBe(false)
       expect(budget.reason).toBe('synthesis_reserved')
       expect(budget.canAuditSynthesis({ requests: 8, steps: 6, tools: 2 })).toBe(true)
@@ -303,11 +304,11 @@ describe('per-turn Supervisor budget', () => {
         'Opening summary. ' + 'Background details. '.repeat(350) + 'The emergency actuator interlock can be used without disconnection.',
       )
       const payload = transport.mock.calls[0]?.[0].messages[0]?.content[0]
-      const content = payload?.type === 'text' ? JSON.parse(payload.text) as { draft: string; excerpts: string[] } : undefined
+      const content = payload?.type === 'text' ? JSON.parse(payload.text) as { draft: string; excerpts: { url: string; excerpt: string }[] } : undefined
       expect(content?.draft).toContain('Opening summary.')
       expect(content?.draft).toContain('The emergency actuator interlock can be used without disconnection.')
       expect(content?.draft.length).toBeLessThan(5000)
-      const [excerpt] = content?.excerpts ?? []
+      const excerpt = content?.excerpts[0]?.excerpt
       expect(excerpt).toContain('Emergency actuator interlock requires disconnection.')
       expect(excerpt?.length).toBeLessThan(3500)
     } finally {

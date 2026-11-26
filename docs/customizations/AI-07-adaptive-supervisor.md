@@ -332,3 +332,23 @@ On the separate [entailment holdout](AI-07-quality-entailment-holdout.json), bot
 | Arithmetic control | 1.95 / 1.95 | 2.30 / 2.31 |
 
 This single paired run gives no reason to enable the flag. The next evaluation should distinguish the effect of classifying material as supplied-only from the effect of auditing a fixed draft. The separate first-draft review can delay an easy answer following a routing error. Evaluate that path independently from the supplied-material audit.
+
+### First-draft review ablation
+
+Flash replayed the five entailment turns, Palisade, and the Python primary-source question. Both runs used selected effort, neutral guidance, first evidence gating and progress review. Both synthesis audits were disabled. Only `AI_CONTROL_DRAFT_REVIEW` changed.
+
+| Case | Draft review off, first text / total (s), tools | Draft review on, first text / total (s), tools | Content result |
+| --- | --- | --- | --- |
+| Arithmetic | 1.40 / 1.40, 0 | 2.52 / 2.53, 0 | Correct in both. Routing called both general questions, and the enabled review added an accepting call. |
+| Palisade | 64.81 / 73.10, 2 | 92.25 / 100.09, 7 | Both made a universal mechanism claim that exceeded the scopes of the cited material. |
+| Python dictionary order | 24.28 / 28.89, 2 | 34.02 / 39.04, 2 | Both distinguished the language guarantee from the earlier CPython implementation. |
+
+Neither source-based turn ran the optional first-draft review in either run. Both entered source work from the initial classification. The divergence in number of tools and elapsed time for Palisade therefore cannot be attributed to the first-draft flag. This ablation supports keeping the flag off and investigating evidence handling after source admission independently.
+
+The source audit payload now identifies each excerpt by its admitted, normalized HTTPS URL. This preserves the association between a claim's cited document and the text available for verification. Each address occupies one slot regardless of repeated reads or fragments. Discovery alone still does not supply an excerpt. The Supervisor suite passed all 37 tests, including the provenance and duplicate-read assertions.
+
+The first Flash replay with identified excerpts still failed the Palisade regression. The answer generalized the mechanism across configurations, treated an unoccupied-seat restriction as an installed-child-seat restriction, and suggested that reaching the third row while the car is moving was practical. The audit accepted it after four tool operations and five Worker requests. First text / total was 83.73 / 83.76 s. Preserving source identity is useful for diagnosis, but this replay does not support enabling the audit by default.
+
+The Python primary-source replay passed the decisive distinction between the Python 3.7 language guarantee and CPython 3.6 behavior. The audit requested one revision and the answer distinguished release notes actually examined from a reference section it could not read. The first meaningful update was at 14.09 s and the complete turn took 65.14 s with seven Worker requests and seven tool operations. With the source audit off on the earlier comparison, the same central conclusion passed in 28.89 s with two tools. The audit-on result therefore does not establish a quality benefit that justifies the observed extra work.
+
+The same traces separate the audit call from the time waiting for an answer. For Palisade, accumulated Worker time was 76.04 s, tool batches 5.85 s and the audit call 0.82 s. For Python those measurements were 53.65 s, 9.29 s and 1.14 s. The audit call is only one component of user-visible latency. Buffering can hold back text already generated, and a revision adds another Worker request.
