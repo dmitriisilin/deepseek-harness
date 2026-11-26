@@ -272,14 +272,17 @@ export class SupervisorBudget {
     for (const url of urls) {
       const parsed = URL.parse(url)
       if (parsed?.protocol === 'https:' && !parsed.username && !parsed.password && !parsed.search) {
+        parsed.hash = ''
         this.discoveredSourceUrls.add(parsed.href)
       }
     }
   }
 
   notePublicSourceExcerpt(url: string, text: string): void {
-    const normalized = URL.parse(url)?.href
-    if (!normalized || !this.discoveredSourceUrls.has(normalized) || this.sourceExcerpts.length >= 3 || !text.trim()) return
+    const normalized = URL.parse(url)
+    if (!normalized) return
+    normalized.hash = ''
+    if (!this.discoveredSourceUrls.has(normalized.href) || this.sourceExcerpts.length >= 3 || !text.trim()) return
     this.sourceExcerpts.push(text.slice(0, 50000))
   }
 

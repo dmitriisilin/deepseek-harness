@@ -909,8 +909,8 @@ export class ReactLoopAgent implements Agent {
               const fetchIds = new Set(toolCalls.filter(call => call.name === 'web_fetch').map(call => call.id))
               for (const { callId, result: outcome } of result.results) {
                 if (outcome.isError || !fetchIds.has(callId)) continue
-                const meta = outcome.meta as { url?: unknown } | undefined
-                if (typeof meta?.url !== 'string') continue
+                const meta = outcome.meta as { url?: unknown; statusCode?: unknown } | undefined
+                if (typeof meta?.url !== 'string' || typeof meta.statusCode !== 'number' || meta.statusCode < 200 || meta.statusCode >= 300) continue
                 supervisor.notePublicSourceExcerpt(meta.url, outcome.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'))
               }
             }

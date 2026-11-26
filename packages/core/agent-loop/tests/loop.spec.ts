@@ -2244,7 +2244,7 @@ describe('parallel Supervisor integration', () => {
       output: {
         schema: { type: 'string' },
         render: (_args, value) => [{ type: 'text', text: value }],
-        presentationMeta: () => ({ url }),
+        presentationMeta: () => ({ url, statusCode: 200 }),
       },
       execute,
     }))

@@ -274,7 +274,7 @@ describe('per-turn Supervisor budget', () => {
       budget.start([user], undefined)
       await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
       expect(budget.canAuditSynthesis(spend)).toBe(false)
-      budget.noteDiscoveredSourceUrls(['https://example.com/reference'])
+      budget.noteDiscoveredSourceUrls(['https://example.com/reference#section'])
       budget.notePublicSourceExcerpt('https://local.example/resource', 'Undiscovered resource')
       budget.notePublicSourceExcerpt('https://example.com/reference', 'Documented conditions')
       expect(budget.canAuditSynthesis({ ...spend, requests: 9 })).toBe(false)
