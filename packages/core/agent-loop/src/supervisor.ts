@@ -303,14 +303,15 @@ export class SupervisorBudget {
           'Choose ACCEPT only when each decisive external claim is supported by the excerpts within the conditions stated, or explicitly left unresolved.',
           'Choose REVISE when a decisive conclusion contradicts a source, omits a material condition, overstates certainty, or takes an older source as proof of a current claim.',
           'The existence of a link does not establish correctness, applicability, or current validity.',
-          'For revisions, provide one short sentence naming the decisive unsupported claim or missing condition.',
+          'For revisions, identify the unsupported claim or missing condition that most directly changes the answer to the user’s question.',
           'Do not propose facts absent from the excerpts.',
         ].join(' '),
         messages: [createUserMessage({
           source: { kind: 'user' },
           content: [{ type: 'text', text: JSON.stringify({
             task: this.task, previousTask: this.previousTask,
-            draft: draft.slice(0, 5000), excerpts: this.sourceExcerpts.map(source => auditExcerpt(source, excerptTerms)),
+            draft: draft.length <= 5000 ? draft : `${draft.slice(0, 3400)}\n[…]\n${draft.slice(-1500)}`,
+            excerpts: this.sourceExcerpts.map(source => auditExcerpt(source, excerptTerms)),
           }) }],
         })],
       }, call)) assembler.push(chunk)

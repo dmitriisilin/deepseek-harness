@@ -288,7 +288,7 @@ describe('per-turn Supervisor budget', () => {
     }
   })
 
-  it('includes matching evidence beyond the header of a long source', async () => {
+  it('checks the beginning and conclusion of a long draft against relevant source sections', async () => {
     vi.stubEnv('AI_CONTROL_SYNTHESIS_AUDIT', '1')
     const transport = vi.fn(async function* (_options: GenerateOptions) { yield* textResponse('REVISE') })
     const budget = new SupervisorBudget(new AbortController().signal, transport)
@@ -296,9 +296,15 @@ describe('per-turn Supervisor budget', () => {
       const url = 'https://example.com/reference'
       budget.noteDiscoveredSourceUrls([url])
       budget.notePublicSourceExcerpt(url, 'navigation '.repeat(1200) + 'Emergency actuator interlock requires disconnection.')
-      await budget.synthesisRevisionAdvice('The emergency actuator interlock can be used without disconnection.')
+      await budget.synthesisRevisionAdvice(
+        'Opening summary. ' + 'Background details. '.repeat(350) + 'The emergency actuator interlock can be used without disconnection.',
+      )
       const payload = transport.mock.calls[0]?.[0].messages[0]?.content[0]
-      const [excerpt] = payload?.type === 'text' ? JSON.parse(payload.text).excerpts as string[] : []
+      const content = payload?.type === 'text' ? JSON.parse(payload.text) as { draft: string; excerpts: string[] } : undefined
+      expect(content?.draft).toContain('Opening summary.')
+      expect(content?.draft).toContain('The emergency actuator interlock can be used without disconnection.')
+      expect(content?.draft.length).toBeLessThan(5000)
+      const [excerpt] = content?.excerpts ?? []
       expect(excerpt).toContain('Emergency actuator interlock requires disconnection.')
       expect(excerpt?.length).toBeLessThan(3500)
     } finally {

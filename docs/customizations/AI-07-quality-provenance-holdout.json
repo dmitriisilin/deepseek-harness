@@ -1,0 +1,31 @@
+[
+  {
+    "messages": [
+      "В тесте 27 из 30 запросов были успешными, а в другом запуске 66 из 120. Сколько процентов запросов успешны в объединённом наборе?"
+    ],
+    "id": "combined-rate",
+    "reference": [
+      "93 from 150, 62%. Group rates 90% and 55%."
+    ]
+  },
+  {
+    "messages": [
+      "Есть записи из двух несовместимых схем. В схеме R отметка VERIFIED означает завершённую проверку, только если поле checksum заполнено. В схеме S VERIFIED означает постановку в очередь независимо от checksum. В строке VERIFIED, checksum пуст, схема не указана. Что эта строка подтверждает?",
+      "Уточнение: это схема S, а checksum теперь заполнено. Можно считать проверку завершённой?"
+    ],
+    "id": "schema-provenance",
+    "reference": [
+      "The row does not establish completion or queueing with the schema unknown. R without checksum is insufficient evidence of completion, S would imply queueing.",
+      "Schema S still means queueing regardless of checksum. Completion remains unverified."
+    ]
+  },
+  {
+    "messages": [
+      "Проверь в первичной документации Git, чем git revert отличается от git reset при отмене уже опубликованного коммита. Дай ссылку на страницы, которые ты открыл, и ответь в двух абзацах."
+    ],
+    "id": "git-primary-source",
+    "reference": [
+      "Open both Git reference pages. Revert creates a new inverse commit while reset can move the branch to another commit. Distinguish changing a local ref from rewriting published history, cite the two opened pages and respect the requested length."
+    ]
+  }
+]
