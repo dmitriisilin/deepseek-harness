@@ -2204,9 +2204,13 @@ describe('parallel Supervisor integration', () => {
     vi.stubEnv('DEEP_SEEK_Supervisor', 'test')
     onTestFinished(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
     vi.stubEnv('AI_CONTROL_PROGRESS_REVIEW', '1')
-    const responses = ['SOURCES', 'FINISH', 'REVISE: The document only covers one version.']
+    const responses = [
+      { decision: 'SOURCES' },
+      { decision: 'FINISH' },
+      { decision: 'REVISE', observation: 'The document only covers one version.' },
+    ]
     const supervisorFetch = vi.fn(async () => Response.json({
-      choices: [{ message: { content: JSON.stringify({ decision: responses.shift() ?? 'ACCEPT' }) } }],
+      choices: [{ message: { content: JSON.stringify(responses.shift() ?? { decision: 'ACCEPT' }) } }],
     }))
     vi.stubGlobal('fetch', supervisorFetch)
     const adapter = new MockAdapter([
