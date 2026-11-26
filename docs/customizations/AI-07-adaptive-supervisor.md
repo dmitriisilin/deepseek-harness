@@ -264,3 +264,15 @@ The live provider did not reliably return a finding when it had to combine the l
 The weighted-rate, schema-provenance and Git-reference prompts are preserved in [AI-07-quality-provenance-holdout.json](AI-07-quality-provenance-holdout.json). The reference entries describe the rubric and are excluded from submitted messages. To reproduce the comparison, use fresh sessions for each entry and keep all messages within an entry in the same session. Evaluate final answers and actual tool results before inspecting diagnostic timings. For source verification, compare the final link to the tool result's URL and inspect whether the returned passage supports the claim. A read that returns only navigation or an access page cannot count as support.
 
 In the live structured-feedback Flash trial, the actual finding reached the Worker. It focused on an unsupported aisle claim but missed the higher-impact distinction about seat operation and restraint conditions. The revision still made broad claims and did not pass the scope rubric. It took 115.62 s, with first visible text at 115.61 s, six requests and four tools. The audit now takes both the opening and closing portions of long drafts and prioritizes a finding that changes the answer to the user's actual question.
+
+### Before and after summary for the selection decision
+
+Each row pairs a replay of the published baseline policy with the isolated candidate on Flash. The times are individual observations. The classification and source reads can vary between runs.
+
+| Regression | Baseline first text / total, s; requests / steps / tools | Candidate first text / total, s; requests / steps / tools | Quality comparison |
+|---|---:|---:|---|
+| Palisade | 27.75 / 32.97; 4 / 4 / 1 | 65.27 / 74.08; 5 / 5 / 4 | Both fail the scope and operating-conditions check. |
+| Insurance | 1.21 / 5.11; 1 / 1 / 0 | 44.60 / 50.61; 5 / 5 / 4 | Baseline confused liability and property. Candidate fixed that distinction but cited a superseded rule as current. Both fail the rubric. |
+| Registration follow-up | 1.13 / 4.49; 1 / 1 / 0 | 55.24 / 60.70; 5 / 5 / 3 | Candidate preserved the vehicle context, included the changed insurance requirement and marked the inspection uncertainty. Baseline gave an overbroad set of refusal conditions. |
+
+The candidate's three simple Flash calculation turns had a median first text of 1.31 s versus 0.95 s on the baseline, with correct answers in both. There is evidence that admission fixes can recover omitted tool actions and that selective draft review reduces the cost of checking simple turns. There is no evidence that this configuration should replace the default policy. The synthesis audit also remains experimental until it produces a correct, useful revision in live runs and the measured overhead is justified.
