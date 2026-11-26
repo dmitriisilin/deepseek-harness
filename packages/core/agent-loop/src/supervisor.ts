@@ -183,7 +183,7 @@ export class SupervisorBudget {
   private recoveredContinuation = false
   private readonly progressReview = process.env.AI_CONTROL_PROGRESS_REVIEW === '1'
   private sourceDiscoverySucceeded = false
-  private documentsRead = 0
+  private readonly documentsRead = new Set<string>()
   private readonly sourceExcerpts = new Map<string, string>()
   private readonly discoveredSourceUrls = new Set<string>()
   sourceOpeningReserved = false
@@ -292,10 +292,11 @@ export class SupervisorBudget {
 
   notePublicSourceExcerpt(url: string, text: string): void {
     const normalized = URL.parse(url)
-    if (!normalized) return
+    if (!normalized || !text.trim()) return
     normalized.hash = ''
+    this.documentsRead.add(normalized.href)
     if (!this.discoveredSourceUrls.has(normalized.href) || this.sourceExcerpts.has(normalized.href)
-      || this.sourceExcerpts.size >= 3 || !text.trim()) return
+      || this.sourceExcerpts.size >= 3) return
     this.sourceExcerpts.set(normalized.href, text.slice(0, 50000))
   }
 
@@ -445,7 +446,7 @@ export class SupervisorBudget {
               successfulTools: this.successfulTools,
               failedTools: this.failedTools,
               ...this.progressReview && this.continuation === 'needs_sources' ? {
-                sourceProgress: { hasDiscovery: this.sourceDiscoverySucceeded, documentsRead: this.documentsRead },
+                sourceProgress: { hasDiscovery: this.sourceDiscoverySucceeded, documentsRead: this.documentsRead.size },
               } : {},
               ...this.progressReview && proposed?.length ? {
                 nextOperations: proposed.slice(0, hard.tools).map(call => ({
@@ -488,7 +489,6 @@ export class SupervisorBudget {
     for (const call of calls) {
       if (!successfulIds.has(call.id)) continue
       const key = this.operationKey(call)
-      if (call.name === 'web_fetch' && !this.successfulOperations.has(key)) this.documentsRead += 1
       this.successfulOperations.add(key)
     }
   }

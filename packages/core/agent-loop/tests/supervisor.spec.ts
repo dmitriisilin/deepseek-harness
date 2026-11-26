@@ -219,11 +219,14 @@ describe('per-turn Supervisor budget', () => {
       budget.start([user], undefined)
       await expect(budget.allow(spend, '', 'needs_sources')).resolves.toBe(true)
       budget.noteSuccessfulOperations([done, failed], new Set([done.id]))
+      budget.notePublicSourceExcerpt('https://example.com/empty', '  ')
+      budget.notePublicSourceExcerpt('https://example.com/read', 'Evidence')
+      budget.notePublicSourceExcerpt('https://example.com/read#section', 'Same document')
       await expect(budget.allow({ ...spend, steps: 4 }, 'One result', undefined, [done, failed])).resolves.toBe(false)
       const request = JSON.stringify(transport.mock.calls[1]?.[0].messages)
       expect(request).toContain('repeatsSuccessfulOperation')
       const review = transport.mock.calls[1]?.[0].messages[0]?.content[0]
-      expect(review?.type === 'text' && JSON.parse(review.text).sourceProgress).toEqual({ hasDiscovery: false, documentsRead: 0 })
+      expect(review?.type === 'text' && JSON.parse(review.text).sourceProgress).toEqual({ hasDiscovery: false, documentsRead: 1 })
       expect(review?.type === 'text' && JSON.parse(review.text).nextOperations).toEqual([
         { tool: 'lookup', repeatsSuccessfulOperation: true },
         { tool: 'lookup', repeatsSuccessfulOperation: false },
