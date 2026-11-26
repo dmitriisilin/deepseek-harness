@@ -116,7 +116,7 @@ async function* supervisorStream(options: SupervisorRequest): AsyncIterable<Stre
         { role: 'system', content: [
           options.system,
           'Output only a JSON object with the selected label in the string field "decision".',
-          options.includeObservation ? 'For REVISE, also put the short finding in the string field "observation".' : '',
+          options.includeObservation ? 'For REVISE, also put one short complete finding of no more than 200 characters in the string field "observation".' : '',
         ].filter(Boolean).join(' ') },
         { role: 'user', content: text },
       ],

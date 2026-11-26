@@ -842,7 +842,9 @@ export class ReactLoopAgent implements Agent {
               'For this revision only, reconsider the final answer using the actual document excerpts.',
               'A provisional synthesis was flagged. Treat the following note as an unverified observation to check against the sources:',
               JSON.stringify(revisionAdvice),
-              'In the opening conclusion distinguish the documented cases, preserve their conditions, and state what remains unresolved.',
+              'Give a concise corrected answer. Keep the supported parts and remove recommendations that require unverified conditions.',
+              'When the evidence cannot settle the user’s question, state exactly which fact is missing. Do not reverse an unsupported claim into an equally unsupported denial.',
+              'Keep the same conditions in the opening, details, and final recommendation.',
             ].join(' ') }],
           }), { surfaceOp: 'append' })
           continue
