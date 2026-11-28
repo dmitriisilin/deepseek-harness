@@ -190,6 +190,7 @@ export function AgentPresetSeat({
         }}
         align="start"
         portal
+        listClassName={memoryOnly ? css.memoryMenu : undefined}
         className={css.menuAnchor}
         anchor={(
           <button

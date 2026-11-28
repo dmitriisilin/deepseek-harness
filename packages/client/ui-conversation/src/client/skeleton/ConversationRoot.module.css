@@ -605,6 +605,11 @@
   z-index: 1;
 }
 
+.heroMemoryRow {
+  display: flex;
+  justify-content: center;
+}
+
 .heroWorkspaceRow {
   display: flex;
   align-items: center;

@@ -171,7 +171,7 @@ export function ConversationContent(props: ConversationContentProps) {
       {hero && <HeroShell t={t} renderSlot={renderSlot} />}
       {hero && heroWorkspaceRow}
       {hero && quickChat && sessionId !== undefined && document.documentElement.dataset.aiControlMemory === 'enabled'
-        && <div className={css.heroWorkspaceRow}>{renderSlot('conversation.hero.agentPreset', {})}</div>}
+        && <div className={css.heroMemoryRow}>{renderSlot('conversation.hero.agentPreset', {})}</div>}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {inputBar}
     </div>

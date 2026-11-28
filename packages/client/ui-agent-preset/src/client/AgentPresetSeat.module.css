@@ -148,7 +148,23 @@
   padding-inline: 12px;
   gap: 6px;
   border-radius: 22px;
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dsw-specific-selector);
+  font-family: inherit;
   font-size: 14px;
+  font-weight: 400;
   -webkit-tap-highlight-color: transparent;
+}
+
+.memoryMenu[data-anchor-align] {
+  --memory-menu-width: 180px;
+  width: var(--memory-menu-width);
+  left: max(12px, calc(anchor(center) - var(--memory-menu-width) / 2));
+  border-radius: 18px;
+}
+
+.memoryMenu :is([role='menuitem'], [role='menuitemradio']) {
+  min-height: 44px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
 }
