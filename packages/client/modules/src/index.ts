@@ -909,11 +909,14 @@ export class ClientModuleRegistry extends Service {
     }
     const memoryArtifacts = process.env.AI_CONTROL_MEMORY_CLIENT_PLUGINS
     const memoryPlugin = packageName === '@deepseek-ai/dsh-client-ui-sidebar' ? 'ui-sidebar'
-      : packageName === '@deepseek-ai/dsh-client-ui-workspace' ? 'ui-workspace' : undefined
-    const clientPackageRoot = memoryArtifacts && isAbsolute(memoryArtifacts) && memoryPlugin
-      ? join(memoryArtifacts, memoryPlugin) : dirname(pkgPath)
+      : packageName === '@deepseek-ai/dsh-client-ui-workspace' ? 'ui-workspace'
+        : packageName === '@deepseek-ai/dsh-client-ui-conversation' ? 'ui-conversation'
+          : packageName === '@deepseek-ai/dsh-client-ui-agent-preset' ? 'ui-agent-preset' : undefined
+    const memoryClientPath = memoryArtifacts && isAbsolute(memoryArtifacts) && memoryPlugin
+      ? join(memoryArtifacts, memoryPlugin, clientRel) : undefined
+    const clientPath = memoryClientPath && existsSync(memoryClientPath) ? memoryClientPath : join(dirname(pkgPath), clientRel)
     const meta: PkgMeta = {
-      clientPath: join(clientPackageRoot, clientRel),
+      clientPath,
       manifestPath: pkgPath,
       ...(decl.inject !== undefined ? { inject: decl.inject } : {}),
       external: decl.external ?? [],

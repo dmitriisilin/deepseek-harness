@@ -142,3 +142,13 @@
   color: var(--dsw-alias-label-caption);
   white-space: normal;
 }
+
+.memorySeat {
+  min-height: 44px;
+  padding-inline: 12px;
+  gap: 6px;
+  border-radius: 22px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  font-size: 14px;
+  -webkit-tap-highlight-color: transparent;
+}

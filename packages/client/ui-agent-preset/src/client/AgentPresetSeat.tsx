@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconWarningOutlineRegular, Menu, Toast,
+  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconSettingsOutlineRegular, IconWarningOutlineRegular, Menu, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ui-conversation SlotMap merge (the hero seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -81,6 +81,10 @@ export type AgentPresetSeatProps =
 export function AgentPresetSeat({
   sessionId, useSessionRetainInfo, load, select, dismissRefusal, introduced, useAgentPresetSeat, useDeveloperTools, t,
 }: AgentPresetSeatProps) {
+  const memoryOnly = typeof document !== 'undefined' && document.documentElement.dataset.aiControlMemory === 'enabled'
+  const russian = typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('ru')
+  const memoryOnLabel = russian ? 'С памятью' : 'With memory'
+  const memoryOffLabel = russian ? 'Без памяти' : 'Without memory'
   const developerTools = useDeveloperTools(value => value)
   const state = useAgentPresetSeat(snapshot => snapshot)
   const main = useSessionRetainInfo(info => sessionId === undefined
@@ -103,8 +107,9 @@ export function AgentPresetSeat({
   }, [load])
 
   const options = useMemo(
-    () => state.options.filter(option => developerTools || !requiresCodingTools(option)),
-    [state.options, developerTools],
+    () => state.options.filter(option => memoryOnly ? option.id === 'standard' || option.id === 'memory-off'
+      : developerTools || !requiresCodingTools(option)),
+    [state.options, developerTools, memoryOnly],
   )
 
   useEffect(() => {
@@ -113,7 +118,7 @@ export function AgentPresetSeat({
 
   const chosen = state.options.find(option => option.id === state.current)
   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
-  const label = chosenText?.name ?? state.current
+  const label = memoryOnly ? state.current === 'memory-off' ? memoryOffLabel : memoryOnLabel : chosenText?.name ?? state.current
   const ready = state.options.length > 0 && state.current !== ''
 
   // The introduce cue: the pick was staged from another screen (the settings
@@ -170,7 +175,7 @@ export function AgentPresetSeat({
             id: option.id,
             // Name and description together: the id alone never says what a
             // preset does, which is why the roster carries display copy.
-            label: (
+            label: memoryOnly ? option.id === 'memory-off' ? memoryOffLabel : memoryOnLabel : (
               <span className={css.item}>
                 <span className={css.itemName}>{text.name}</span>
                 <span className={css.itemDesc}>{text.description ?? t('noDescription')}</span>
@@ -189,14 +194,15 @@ export function AgentPresetSeat({
         anchor={(
           <button
             type="button"
-            className={css.seat}
+            className={memoryOnly ? `${css.seat} ${css.memorySeat}` : css.seat}
             aria-haspopup="menu"
             aria-expanded={open && options.length > 0}
             title={(typeof state.error === 'object' ? state.error?.reason : state.error) ?? t('seatHint')}
             disabled={state.busy || options.length === 0}
             onClick={() => { setOpen(value => !value) }}
           >
-            <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
+            {memoryOnly ? <IconSettingsOutlineRegular size={16} className={css.seatIcon} />
+              : <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />}
             <span className={css.seatLabel}>{shownLabel}</span>
             <IconChevronDownOutlineRegular className={css.chevron} />
           </button>

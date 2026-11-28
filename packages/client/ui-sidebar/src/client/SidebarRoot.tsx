@@ -177,7 +177,6 @@ export function SidebarRoot({
   const canStartSession = useRemoteAccess('session/create')
   const toggleLabel = collapsed ? t('toggle.open') : t('toggle.collapse')
   const aiControl = typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red'
-  const memoryEnabled = aiControl && document.documentElement.dataset.aiControlMemory === 'enabled'
   const newSessionLabel = t(aiControl ? 'aiControl.newChat' : 'session.new.label')
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
@@ -415,13 +414,6 @@ export function SidebarRoot({
               </Tooltip>
             ),
           })}
-        </div>
-      )}
-      {canStartSession && memoryEnabled && wide && (
-        <div className={css.newSessionRow}>
-          <button type="button" className={css.newSession} onClick={() => startSession(undefined, { agentPreset: 'memory-off' })}>
-            {t('aiControl.memoryOffChat')}
-          </button>
         </div>
       )}
 

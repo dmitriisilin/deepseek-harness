@@ -189,6 +189,10 @@ export function apply(ctx: ClientContext): void {
         hooks: { agentPresetSeat: seat.store, developerTools: ctx.configForms.developerTools.enabled },
         load: () => seat.load(),
         select: async (id: string) => {
+          if (document.documentElement.dataset.aiControlMemory === 'enabled' && (id === 'standard' || id === 'memory-off')) {
+            if (id !== seat.store.getSnapshot().current) scope.uiWorkspace.startSession(undefined, { agentPreset: id })
+            return undefined
+          }
           const state = seat.store.getSnapshot()
           const from = analyticsMode(state.current)
           const to = analyticsMode(id)
