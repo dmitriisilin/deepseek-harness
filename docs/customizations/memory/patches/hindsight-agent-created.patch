@@ -1,8 +1,13 @@
 diff --git a/hindsight-integrations/coding-agents/src/dsh.ts b/hindsight-integrations/coding-agents/src/dsh.ts
-index 1a8f2f0..3f666fe 100644
+index 1a8f2f0..a6ae009 100644
 --- a/hindsight-integrations/coding-agents/src/dsh.ts
 +++ b/hindsight-integrations/coding-agents/src/dsh.ts
-@@ -7,7 +7,7 @@
+@@ -1,3 +1,4 @@
++import { selectMemoryEvents } from "./capture-policy.js";
+ /**
+  * DeepSeek Harness (`dsh`) entrypoint — a native Cordis plugin.
+  *
+@@ -7,7 +8,7 @@
   * install (neither bridge ships in a default profile) while losing the transcript, the session id
   * and the awaited stop boundary.
   *
@@ -11,7 +16,7 @@ index 1a8f2f0..3f666fe 100644
   *   agent/pre-step       -> RuntimeCore.onPrompt        (recall) + the injection as a sourced message
   *   agent/turn-stopping  -> RuntimeCore.onSessionIdle   (write-back of the completed exchange)
   *   ctx.tools            -> the hindsight_* page suite, registered natively
-@@ -34,6 +34,12 @@ import type { TransportTurn } from "./core/chat";
+@@ -34,6 +35,12 @@ import type { TransportTurn } from "./core/chat";
  import { HINDSIGHT_PLUGIN, readDshEvents, type DshSessionEvent } from "./core/transcript-dsh";
  
  const HARNESS = "dsh";
@@ -24,7 +29,7 @@ index 1a8f2f0..3f666fe 100644
  
  /** Cordis plugin name (loader diagnostics, and the `source.plugin` on everything we inject). */
  export const name = HINDSIGHT_PLUGIN;
-@@ -44,7 +50,7 @@ export const inject = ["agents"];
+@@ -44,7 +51,7 @@ export const inject = ["agents"];
  // ── host shapes (structural: this package must not depend on dsh's packages) ─────
  
  interface DshSession {
@@ -33,7 +38,7 @@ index 1a8f2f0..3f666fe 100644
    /**
     * Legacy in-memory event log. Present on DeepSeek Harness < alpha.4; removed in alpha.4+.
     * Prefer {@link snapshotEvents} when available.
-@@ -81,8 +87,8 @@ interface PreStepPayload {
+@@ -81,8 +88,8 @@ interface PreStepPayload {
  /** The Cordis context surface this plugin uses. */
  interface DshContext {
    on(
@@ -44,7 +49,18 @@ index 1a8f2f0..3f666fe 100644
    ): (() => void) | void;
    on(
      event: "agent/pre-step",
-@@ -148,7 +154,7 @@ export async function readPastSession(
+@@ -96,6 +103,10 @@ interface DshContext {
+     event: "agent/turn-stopping",
+     listener: (payload: { agent: DshAgent }) => Promise<void> | void
+   ): (() => void) | void;
++  on(
++    event: "session/event",
++    listener: (session: DshSession, event: DshSessionEvent) => void
++  ): (() => void) | void;
+   on(
+     event: "agent/disposed",
+     listener: (payload: { agent: DshAgent }) => void
+@@ -148,7 +159,7 @@ export async function readPastSession(
  
  interface DshToolContext {
    tools: {
@@ -53,14 +69,14 @@ index 1a8f2f0..3f666fe 100644
      /** Registry introspection; used only to log what the host ended up exposing. */
      schemas?(): { name: string }[];
    };
-@@ -235,11 +241,13 @@ function workspaceFor(root: string): Workspace | undefined {
+@@ -235,11 +246,13 @@ function workspaceFor(root: string): Workspace | undefined {
    // memory, so unlike opencode there is nothing to refetch over HTTP.
    core.setTranscriptSource(async (sessionId) => {
      const agent = liveAgents.get(sessionId);
 -    return agent ? readDshEvents(ownEvents(agent.session)) : [];
 +    if (!agent) return [];
 +    const events = ownEvents(agent.session);
-+    return readDshEvents(personal ? events.filter(event => event.type !== "tool/call") : events);
++    return readDshEvents(personal ? selectMemoryEvents(events) : events);
    });
    // A session whose write-back failed before the app quit has no live agent any more: it is read
    // back from the host's store, so a later process can replay it (#6559).
@@ -69,7 +85,7 @@ index 1a8f2f0..3f666fe 100644
    const workspace: Workspace = { core, root };
    workspaces.set(root, workspace);
    return workspace;
-@@ -248,7 +256,7 @@ function workspaceFor(root: string): Workspace | undefined {
+@@ -248,7 +261,7 @@ function workspaceFor(root: string): Workspace | undefined {
  /**
   * Start this repo's cold-check + background seed once.
   *
@@ -78,7 +94,7 @@ index 1a8f2f0..3f666fe 100644
   * the Web UI must not wait on a network round-trip to open a session. Nothing the first prompt
   * needs comes from here — it builds its own pages preamble from that session's page list.
   */
-@@ -346,7 +354,7 @@ export function createDshHooks(resolve: (agent: DshAgent) => Workspace | undefin
+@@ -346,7 +359,7 @@ export function createDshHooks(resolve: (agent: DshAgent) => Workspace | undefin
        if (!workspace) return decision;
        const sessionId = agent.session.header.id;
        liveAgents.set(sessionId, agent);
@@ -87,7 +103,7 @@ index 1a8f2f0..3f666fe 100644
        // keeps the cold-check exactly-once without depending on which events a host fired.
        ensureSeeded(workspace);
        // No new human input means a tool continuation: recall already ran for this turn, and its
-@@ -514,7 +522,14 @@ function specsOf(workspace: Workspace): ToolSpec[] {
+@@ -514,7 +527,14 @@ function specsOf(workspace: Workspace): ToolSpec[] {
   */
  export function apply(ctx: DshContext): void {
    const hooks = createDshHooks(workspaceForAgent);
@@ -103,7 +119,7 @@ index 1a8f2f0..3f666fe 100644
    // `prepend: true` puts this listener outermost, so the injection is appended AFTER every other
    // contributor's messages — the memory block reads last, closest to the model's turn.
    ctx.on("agent/pre-step", hooks.preStep, { prepend: true });
-@@ -536,4 +551,52 @@ export function apply(ctx: DshContext): void {
+@@ -536,4 +556,57 @@ export function apply(ctx: DshContext): void {
    });
  }
  
@@ -135,8 +151,13 @@ index 1a8f2f0..3f666fe 100644
 +    if (!profile || profile === lastInjectedText(dshSessionEvents(agent.session))) return decision;
 +    return { ...decision, messages: [...decision.messages, injectionMessage(profile)] };
 +  }, { prepend: true });
-+  ctx.on("agent/turn-stopping", ({ agent }) => {
-+    if (allowsPersonalMemory(agent)) return hooks.turnStopping({ agent });
++  ctx.on("session/event", (session, event) => {
++    const agent = { session };
++    if (event.type !== "turn/end" || !allowsPersonalMemory(agent)) return;
++    selectMemoryEvents(ownEvents(session), "hindsight", session.header.id);
++    void hooks.turnStopping({ agent }).catch(error => {
++      console.warn("[hindsight] memory capture failed", error instanceof Error ? error.name : "unknown");
++    });
 +  });
 +  ctx.on("agent/disposed", hooks.disposed);
 +  if (!readPersonal) return;

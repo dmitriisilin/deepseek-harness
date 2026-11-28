@@ -15,9 +15,11 @@ checkout() {
 }
 checkout https://github.com/plastic-labs/dsh-honcho.git 22c6df79c2d95ced6a92f4a4b5c4ed6d2052eca5 "$release_dir/dsh-honcho"
 git -C "$release_dir/dsh-honcho" apply "$here/patches/honcho-live-session.patch"
+cp "$here/capture-policy.ts" "$release_dir/dsh-honcho/src/capture-policy.ts"
 (cd "$release_dir/dsh-honcho" && npm install --no-audit --no-fund && npm run build && npm run verify:tools)
 
 checkout https://github.com/vectorize-io/hindsight.git c828c7e41527d0c4916cac0ba2b56334fed4a79d "$release_dir/hindsight"
 git -C "$release_dir/hindsight" apply "$here/patches/hindsight-agent-created.patch"
+cp "$here/capture-policy.ts" "$release_dir/hindsight/hindsight-integrations/coding-agents/src/capture-policy.ts"
 (cd "$release_dir/hindsight/hindsight-integrations/coding-agents" &&
   npm ci --no-audit --no-fund && npm run build && npx --no-install vitest run src/dsh.test.ts)
