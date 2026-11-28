@@ -218,6 +218,23 @@ describe('Agent.cancel()', () => {
     expect(adapter.requests).toHaveLength(3)
   })
 
+  it('resumes queued work after stopping the current turn when requested', async () => {
+    const adapter = new MockAdapter(['hang', textResponse('next reply'), textResponse('last reply')])
+    const ctx = await harness(adapter)
+    const agent = await ctx.agentLoop.create(SessionId('resume-after-stop'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'active')
+    await new Promise(resolve => setTimeout(resolve, 30))
+    send(agent, 'next')
+    send(agent, 'last')
+    agent.cancel({ kind: 'user' }, { keepInbox: true, resumeInbox: true })
+    await agent.whenIdle()
+
+    expect(userTexts(agent)).toEqual(['active', 'next', 'last'])
+    expect(agent.inbox.nextTurn).toHaveLength(0)
+    expect(adapter.requests).toHaveLength(3)
+  })
+
   it('cancel({ keepInbox: true }) latches a waking send landing in the abort-to-idle window', async () => {
     const adapter = new MockAdapter(['hang', textResponse('B reply')])
     const ctx = await harness(adapter)

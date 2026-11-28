@@ -535,7 +535,7 @@ export class SessionCommandController {
     if (hasApiSessionSubagentOwner(agent.session)) {
       throw apiSessionSubagentOwnershipError(request.sessionId)
     }
-    agent.cancel({ kind: 'user' }, { keepInbox: true })
+    agent.cancel({ kind: 'user' }, { keepInbox: true, resumeInbox: true })
     return { accepted: true }
   }
 

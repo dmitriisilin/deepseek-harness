@@ -48,6 +48,8 @@ export interface CancelOptions {
    * later turn and no canceled inbox splice is logged.
    */
   keepInbox?: boolean | undefined
+  /** Resume preserved inbox work once cancellation has settled. */
+  resumeInbox?: boolean | undefined
 }
 
 /** Agent-owned access to the model choice for future steps. */

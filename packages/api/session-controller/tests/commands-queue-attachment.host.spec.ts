@@ -244,7 +244,7 @@ describe('Session queue commands', () => {
       sessionId: SessionId('missing'),
     })), 'session/not-found')
     expect(controller.cancel({ sessionId: agent.id })).toEqual({ accepted: true })
-    expect(cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true })
+    expect(cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true, resumeInbox: true })
     await ctx.fiber.dispose()
   })
 

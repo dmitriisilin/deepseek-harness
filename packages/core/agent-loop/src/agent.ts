@@ -280,6 +280,7 @@ export class ReactLoopAgent implements Agent {
       // Queue persistence must not prevent cancellation of admitted work.
       if (this.phase.kind !== 'idle') {
         if (!options.keepInbox) this.phase.wakeRequested = false
+        if (options.keepInbox && options.resumeInbox) this.phase.wakeRequested = true
         this.phase.abort.abort(cause)
       }
     }
