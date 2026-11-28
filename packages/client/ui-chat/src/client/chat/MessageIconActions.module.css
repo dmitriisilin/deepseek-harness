@@ -115,42 +115,30 @@
   white-space: nowrap;
 }
 
-.aiControlMessageMenu { display: none; }
+.aiControlCopy {
+  display: none;
+}
 
 @media (max-width: 600px) {
   :global(html[data-ai-control='red']) .actions {
     display: none;
   }
 
-  :global(html[data-ai-control='red']) .aiControlMessageMenu {
-    display: block;
-    position: relative;
-    width: fit-content;
-    margin-inline-start: auto;
-  }
-
-  .aiControlMessageMenu summary {
+  :global(html[data-ai-control='red']) .aiControlCopy {
     display: grid;
     place-items: center;
     width: 44px;
-    height: 44px;
-    list-style: none;
+    min-height: 44px;
+    margin-inline-start: auto;
+    padding: 0;
+    border: none;
+    border-radius: var(--dsw-radius-sm);
+    background: transparent;
+    color: var(--dsw-alias-label-secondary);
     cursor: pointer;
   }
 
-  .aiControlMessageMenu summary::-webkit-details-marker { display: none; }
-
-  .aiControlMessageMenu button {
-    position: absolute;
-    right: 0;
-    bottom: 100%;
-    z-index: 1;
-    min-height: 44px;
-    padding-inline: 16px;
-    border: 1px solid var(--dsw-alias-border-primary);
-    border-radius: 10px;
-    color: var(--dsw-alias-label-primary);
-    background: var(--dsw-alias-bg-primary, Canvas);
-    white-space: nowrap;
+  .aiControlCopy:active {
+    background: var(--dsw-alias-interactive-bg-hover);
   }
 }

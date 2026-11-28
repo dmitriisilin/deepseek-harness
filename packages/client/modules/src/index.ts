@@ -911,7 +911,8 @@ export class ClientModuleRegistry extends Service {
     const memoryPlugin = packageName === '@deepseek-ai/dsh-client-ui-sidebar' ? 'ui-sidebar'
       : packageName === '@deepseek-ai/dsh-client-ui-workspace' ? 'ui-workspace'
         : packageName === '@deepseek-ai/dsh-client-ui-conversation' ? 'ui-conversation'
-          : packageName === '@deepseek-ai/dsh-client-ui-agent-preset' ? 'ui-agent-preset' : undefined
+          : packageName === '@deepseek-ai/dsh-client-ui-agent-preset' ? 'ui-agent-preset'
+            : packageName === '@deepseek-ai/dsh-client-ui-chat' ? 'ui-chat' : undefined
     const memoryClientPath = memoryArtifacts && isAbsolute(memoryArtifacts) && memoryPlugin
       ? join(memoryArtifacts, memoryPlugin, clientRel) : undefined
     const clientPath = memoryClientPath && existsSync(memoryClientPath) ? memoryClientPath : join(dirname(pkgPath), clientRel)

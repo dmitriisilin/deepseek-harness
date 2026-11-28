@@ -3,7 +3,7 @@
 
 import { useId, type ReactNode } from 'react'
 import {
-  IconBranchOutlineRegular, IconCheckOutlineRegular, IconCopyOutlineRegular, IconEllipsisOutlineRegular, Tooltip, useClipboardCopy,
+  IconBranchOutlineRegular, IconCheckOutlineRegular, IconCopyOutlineRegular, Tooltip, useClipboardCopy,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { formatMessageClock } from './message-chrome.ts'
@@ -87,12 +87,14 @@ export function MessageIconActions({
           ? <span className={css.endInfo}>{usageAction}{clockEl}</span>
           : usageAction}
       </div>
-      <details className={css.aiControlMessageMenu}>
-        <summary aria-label={t('copy')}><IconEllipsisOutlineRegular size={20} /></summary>
-        <button type="button" onClick={() => { onCopy() }}>
-          {copied ? t('copied') : t('copy')}
-        </button>
-      </details>
+      <button
+        type="button"
+        className={css.aiControlCopy}
+        aria-label={copied ? t('copied') : t('copy')}
+        onClick={onCopy}
+      >
+        {copied ? <IconCheckOutlineRegular size={22} /> : <IconCopyOutlineRegular size={22} />}
+      </button>
     </>
   )
 }
