@@ -1,0 +1,158 @@
+diff --git a/hindsight-integrations/coding-agents/src/dsh.ts b/hindsight-integrations/coding-agents/src/dsh.ts
+index 1a8f2f0..3f666fe 100644
+--- a/hindsight-integrations/coding-agents/src/dsh.ts
++++ b/hindsight-integrations/coding-agents/src/dsh.ts
+@@ -7,7 +7,7 @@
+  * install (neither bridge ships in a default profile) while losing the transcript, the session id
+  * and the awaited stop boundary.
+  *
+- *   agent/session-start  -> RuntimeCore.seedIfCold      (cold-check + background git/codebase seed)
++ *   agent/created  -> RuntimeCore.seedIfCold      (cold-check + background git/codebase seed)
+  *   agent/pre-step       -> RuntimeCore.onPrompt        (recall) + the injection as a sourced message
+  *   agent/turn-stopping  -> RuntimeCore.onSessionIdle   (write-back of the completed exchange)
+  *   ctx.tools            -> the hindsight_* page suite, registered natively
+@@ -34,6 +34,12 @@ import type { TransportTurn } from "./core/chat";
+ import { HINDSIGHT_PLUGIN, readDshEvents, type DshSessionEvent } from "./core/transcript-dsh";
+ 
+ const HARNESS = "dsh";
++const personal = process.env.AI_CONTROL_MEMORY_PERSONAL === "1";
++const readPersonal = process.env.AI_CONTROL_MEMORY_READER === "hindsight";
++function allowsPersonalMemory(agent: DshAgent): boolean {
++  const { origin, agentPreset } = agent.session.header;
++  return origin !== "subagent" && agentPreset !== "memory-off";
++}
+ 
+ /** Cordis plugin name (loader diagnostics, and the `source.plugin` on everything we inject). */
+ export const name = HINDSIGHT_PLUGIN;
+@@ -44,7 +50,7 @@ export const inject = ["agents"];
+ // ── host shapes (structural: this package must not depend on dsh's packages) ─────
+ 
+ interface DshSession {
+-  readonly header: { readonly id: string; readonly cwd?: string; readonly origin?: string };
++  readonly header: { readonly id: string; readonly cwd?: string; readonly origin?: string; readonly agentPreset?: string };
+   /**
+    * Legacy in-memory event log. Present on DeepSeek Harness < alpha.4; removed in alpha.4+.
+    * Prefer {@link snapshotEvents} when available.
+@@ -81,8 +87,8 @@ interface PreStepPayload {
+ /** The Cordis context surface this plugin uses. */
+ interface DshContext {
+   on(
+-    event: "agent/session-start",
+-    listener: (payload: { agent: DshAgent }) => void
++    event: "agent/created",
++    listener: (payload: { agent: DshAgent }) => undefined
+   ): (() => void) | void;
+   on(
+     event: "agent/pre-step",
+@@ -148,7 +154,7 @@ export async function readPastSession(
+ 
+ interface DshToolContext {
+   tools: {
+-    register(definition: unknown): void;
++    register(definition: unknown, options?: { when(context: { agent: DshAgent }): boolean }): void;
+     /** Registry introspection; used only to log what the host ended up exposing. */
+     schemas?(): { name: string }[];
+   };
+@@ -235,11 +241,13 @@ function workspaceFor(root: string): Workspace | undefined {
+   // memory, so unlike opencode there is nothing to refetch over HTTP.
+   core.setTranscriptSource(async (sessionId) => {
+     const agent = liveAgents.get(sessionId);
+-    return agent ? readDshEvents(ownEvents(agent.session)) : [];
++    if (!agent) return [];
++    const events = ownEvents(agent.session);
++    return readDshEvents(personal ? events.filter(event => event.type !== "tool/call") : events);
+   });
+   // A session whose write-back failed before the app quit has no live agent any more: it is read
+   // back from the host's store, so a later process can replay it (#6559).
+-  core.setPastSessionSource(readStoredSession);
++  if (!personal) core.setPastSessionSource(readStoredSession);
+   const workspace: Workspace = { core, root };
+   workspaces.set(root, workspace);
+   return workspace;
+@@ -248,7 +256,7 @@ function workspaceFor(root: string): Workspace | undefined {
+ /**
+  * Start this repo's cold-check + background seed once.
+  *
+- * Fire-and-forget by design: `agent/session-start` is an emit that no extension point awaits, and
++ * Fire-and-forget by design: DSH awaits `agent/created`, so this listener must return promptly and
+  * the Web UI must not wait on a network round-trip to open a session. Nothing the first prompt
+  * needs comes from here — it builds its own pages preamble from that session's page list.
+  */
+@@ -346,7 +354,7 @@ export function createDshHooks(resolve: (agent: DshAgent) => Workspace | undefin
+       if (!workspace) return decision;
+       const sessionId = agent.session.header.id;
+       liveAgents.set(sessionId, agent);
+-      // A resumed session gets no `agent/session-start` in some compositions; seeding here too
++      // A resumed session gets no `agent/created` in some compositions; seeding here too
+       // keeps the cold-check exactly-once without depending on which events a host fired.
+       ensureSeeded(workspace);
+       // No new human input means a tool continuation: recall already ran for this turn, and its
+@@ -514,7 +522,14 @@ function specsOf(workspace: Workspace): ToolSpec[] {
+  */
+ export function apply(ctx: DshContext): void {
+   const hooks = createDshHooks(workspaceForAgent);
+-  ctx.on("agent/session-start", hooks.sessionStart);
++  if (personal) {
++    applyPersonal(ctx, hooks);
++    return;
++  }
++  ctx.on("agent/created", (payload) => {
++    hooks.sessionStart(payload);
++    return undefined;
++  });
+   // `prepend: true` puts this listener outermost, so the injection is appended AFTER every other
+   // contributor's messages — the memory block reads last, closest to the model's turn.
+   ctx.on("agent/pre-step", hooks.preStep, { prepend: true });
+@@ -536,4 +551,52 @@ export function apply(ctx: DshContext): void {
+   });
+ }
+ 
++function applyPersonal(ctx: DshContext, hooks: ReturnType<typeof createDshHooks>): void {
++  if (!process.env.HINDSIGHT_BANK_ID) throw new Error("Personal Hindsight memory needs a dedicated bank");
++  const { cfg, bankId, client } = resolveHostMemory(HARNESS, process.cwd());
++  if (cfg.disabled || bankId !== process.env.HINDSIGHT_BANK_ID) {
++    throw new Error("Personal Hindsight memory resolved to an unexpected bank");
++  }
++  let profile = "";
++  let nextRefresh = 0;
++  function refreshProfile(): void {
++    if (!readPersonal || Date.now() < nextRefresh) return;
++    nextRefresh = Date.now() + 60_000;
++    void client.getMentalModel("personal-profile", { timeoutMs: 2000 }).then(model => {
++      if (model && typeof model === "object" && "content" in model && typeof model.content === "string") {
++        profile = model.content.trim().slice(0, 1200);
++      }
++    }).catch(() => {});
++  }
++  ctx.on("agent/created", ({ agent }) => {
++    if (allowsPersonalMemory(agent)) refreshProfile();
++    return undefined;
++  });
++  ctx.on("agent/pre-step", async ({ agent, signal }, next) => {
++    const decision = await next();
++    if (!readPersonal || !allowsPersonalMemory(agent) || signal.aborted || decision.kind !== "enter" || !promptOf(decision.messages)) return decision;
++    refreshProfile();
++    if (!profile || profile === lastInjectedText(dshSessionEvents(agent.session))) return decision;
++    return { ...decision, messages: [...decision.messages, injectionMessage(profile)] };
++  }, { prepend: true });
++  ctx.on("agent/turn-stopping", ({ agent }) => {
++    if (allowsPersonalMemory(agent)) return hooks.turnStopping({ agent });
++  });
++  ctx.on("agent/disposed", hooks.disposed);
++  if (!readPersonal) return;
++  ctx.inject(["tools"], ({ tools }) => {
++    tools.register({
++      name: "personal_memory_search",
++      description: "Search your personal memory for relevant past facts and discussions.",
++      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
++      output: { schema: { type: "string" }, render: (_args: unknown, value: string) => [{ type: "text", text: value }] },
++      async execute(args: { query: string }, exec: DshToolRunContext): Promise<string> {
++        if (!exec.agent || !allowsPersonalMemory(exec.agent)) throw new Error("Personal memory is disabled");
++        const observations = await client.recallObservations(args.query, { timeoutMs: 4000 });
++        return observations.join("\n").slice(0, 6000) || "No relevant personal memories found.";
++      },
++    }, { when: ({ agent }) => allowsPersonalMemory(agent) });
++  });
++}
++
+ export default { name, inject, apply };

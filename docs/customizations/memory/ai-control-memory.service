@@ -1,0 +1,10 @@
+[Unit]
+Description=AI Control local personal memory backends
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bash %h/workspace/deepseek-harness/docs/customizations/memory/start-local.sh
+TimeoutStartSec=300

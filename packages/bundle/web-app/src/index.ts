@@ -2,8 +2,7 @@
  * @deepseek-ai/dsh-web-app — the browser-surface bundle's runtime glue plugin
  * plus the bundle patch (`cordis.patch.yml`, declared by the `dsh.bundle.patch`
  * manifest field). The plugin owns the browser-surface glue: it resolves
- * the built frontend dist (workspace knowledge of this bundle, never user
- * config), mounts the `frontend-static` fallback owner over it, registers the
+ * the built frontend dist (normally anchored on the frontend package), mounts the `frontend-static` fallback owner over it, registers the
  * bash-visible web runtime variable, the process-token URL line, and the
  * default-browser handoff, and provides the `webApp` service. An advertised
  * `publicUrl` replaces the published bind-address URL. Non-loopback
@@ -14,7 +13,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { auditStartupEntries } from '@deepseek-ai/dsh-app-boot'
@@ -121,6 +120,8 @@ try {
  * ships its own page and carries no dist) boots without one.
  */
 function resolveDistIndex(): string {
+  const aiControlDist = process.env.AI_CONTROL_WEB_DIST
+  if (aiControlDist && isAbsolute(aiControlDist)) return join(aiControlDist, 'index.html')
   const require = createRequire(import.meta.url)
   try {
     return join(dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json')), 'dist', 'index.html')
@@ -203,6 +204,10 @@ export function apply(ctx: Context, config: Config): void {
   /** The advertised root: the canonical `publicUrl`, or the listener's own origin. */
   const appRootUrl = (): string => publicUrl ?? ctx.webServer.getOrigin()
   ctx.provide('webApp', { getAdvertisedUrl: appRootUrl } satisfies WebApp)
+  if (process.env.AI_CONTROL_MEMORY_PERSONAL === '1') {
+    ctx.effect(() => ctx.webServer.tapIndex(html => html.replace('<html ', '<html data-ai-control-memory="enabled" ')),
+      'AI Control personal memory controls')
+  }
   ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })
   if (config.surfaceContext) {
     ctx.inject(['shellEnv'], (runtimeCtx) => {

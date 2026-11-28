@@ -907,8 +907,13 @@ export class ClientModuleRegistry extends Service {
     if (clientRel === undefined) {
       throw new Error(`client-modules: ${packageName} declares dsh.client but exports no "./client" bundle`)
     }
+    const memoryArtifacts = process.env.AI_CONTROL_MEMORY_CLIENT_PLUGINS
+    const memoryPlugin = packageName === '@deepseek-ai/dsh-client-ui-sidebar' ? 'ui-sidebar'
+      : packageName === '@deepseek-ai/dsh-client-ui-workspace' ? 'ui-workspace' : undefined
+    const clientPackageRoot = memoryArtifacts && isAbsolute(memoryArtifacts) && memoryPlugin
+      ? join(memoryArtifacts, memoryPlugin) : dirname(pkgPath)
     const meta: PkgMeta = {
-      clientPath: join(dirname(pkgPath), clientRel),
+      clientPath: join(clientPackageRoot, clientRel),
       manifestPath: pkgPath,
       ...(decl.inject !== undefined ? { inject: decl.inject } : {}),
       external: decl.external ?? [],

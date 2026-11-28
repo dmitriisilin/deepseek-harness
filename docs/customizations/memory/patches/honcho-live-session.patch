@@ -1,0 +1,207 @@
+diff --git a/src/capture.ts b/src/capture.ts
+index f9378fb..3b08ed8 100644
+--- a/src/capture.ts
++++ b/src/capture.ts
+@@ -248,6 +248,7 @@ export interface CaptureDeps {
+ export interface Capture {
+   schedule(sessionId: string): void;
+   flush(sessionId: string): Promise<void>;
++  forget(sessionId: string, eventCount: number): void;
+   /** Rejects if any session's upload failed, so `/honcho flush` can report it. */
+   flushAll(): Promise<void>;
+   /** Flush everything outstanding, then stop. Await this from the plugin's
+@@ -345,6 +346,9 @@ export function createCapture(config: ResolvedConfig, deps: CaptureDeps): Captur
+       known.add(sessionId);
+       return guarded(sessionId);
+     },
++    forget(sessionId, eventCount) {
++      if (readCursor(sessionId) >= eventCount) known.delete(sessionId);
++    },
+     async flushAll() {
+       const before = failures;
+       await Promise.all([...known].map((id) => this.flush(id)));
+diff --git a/src/index.ts b/src/index.ts
+index fa02dfb..050e8ff 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -90,8 +90,17 @@ const MEMORY_CONTEXT_NAME = "honcho:memory";
+  *  and only this long. */
+ const FIRST_TURN_BUDGET_MS = 5_000;
+ 
++const personal = process.env.AI_CONTROL_MEMORY_PERSONAL === "1";
++const readPersonal = process.env.AI_CONTROL_MEMORY_READER === "honcho";
++
++interface MemorySessionHeader { cwd?: string; origin?: string; agentPreset?: string }
++
++function allowsMemory(header: MemorySessionHeader | undefined): boolean {
++  return !personal || (!!header && header.origin !== "subagent" && header.agentPreset !== "memory-off");
++}
++
+ interface AgentLike {
+-  session?: { id?: string; header?: { cwd?: string } };
++  session?: { id?: string; header?: MemorySessionHeader };
+ }
+ 
+ function sessionOf(agent: AgentLike | undefined): [cwd: string | undefined, id: string | undefined] {
+@@ -197,19 +206,32 @@ export function apply(ctx: Context, config: Config = {}): void {
+         readSession(id: string): Promise<{ session?: { cwd?: string }; events?: readonly unknown[] }>;
+       };
+ 
++      type LiveSession = {
++        id?: string;
++        header?: MemorySessionHeader;
++        snapshotEvents?(): readonly { type?: string; data?: unknown }[];
++      };
++      const liveSessions = new Map<string, LiveSession>();
+       const active = createCapture(resolved, {
+-        readSession: (id) => sessionQuery.readSession(id) as never,
++        async readSession(id) {
++          const session = liveSessions.get(id);
++          if (session?.snapshotEvents) {
++            return { session: session.header, events: session.snapshotEvents() };
++          }
++          return sessionQuery.readSession(id) as never;
++        },
+         honchoSessionName: (cwd, dshSessionId) => sessionNameFor(cwd, dshSessionId),
+         upload: (name, messages) => honcho.upload(name, messages),
+         onError: (message) => log(`capture: ${message}`),
+       });
+       capture = active;
+ 
+-      scoped.on("session/event", (session: { id?: string }, event: { type?: string }) => {
+-        if (!session.id) return;
+-        if (event.type === "user/message" || event.type === "assistant/message") {
++      scoped.on("session/event", (session: LiveSession, event: { type?: string }) => {
++        if (personal || !session.id) return;
++        if (session.snapshotEvents) liveSessions.set(session.id, session);
++        if (!personal && (event.type === "user/message" || event.type === "assistant/message")) {
+           active.schedule(session.id);
+-        } else if (event.type === "compaction/start") {
++        } else if (!personal && event.type === "compaction/start") {
+           // The lock brackets the whole operation, so this fires before any
+           // history is shadowed. Last chance to capture what is about to go.
+           void active.flush(session.id);
+@@ -218,11 +240,41 @@ export function apply(ctx: Context, config: Config = {}): void {
+ 
+       scoped.on("agent/turn-stopping", async (payload: { agent: AgentLike }) => {
+         const id = payload.agent.session?.id;
+-        if (id) await active.flush(id);
++        if (!id || !allowsMemory(payload.agent.session?.header)) return;
++        if (!personal) {
++          await active.flush(id);
++          return;
++        }
++        const session = payload.agent.session as LiveSession;
++        const events = session.snapshotEvents?.();
++        if (!events) return;
++        const snapshot = { header: session.header, snapshotEvents: () => events };
++        liveSessions.set(id, snapshot);
++        void honcho.ensureSession(...sessionOf(payload.agent))
++          .then(() => active.flush(id))
++          .catch((error: unknown) => log(`capture: ${describeError(error)}`))
++          .finally(() => {
++            if (liveSessions.get(id) !== snapshot) return;
++            active.forget(id, events.length);
++            liveSessions.delete(id);
++          });
++      });
++
++      scoped.on("agent/disposed", ({ agent }) => {
++        if (personal) return;
++        const id = agent.session.id;
++        const session = liveSessions.get(id);
++        if (!session?.snapshotEvents) return;
++        const eventCount = session.snapshotEvents().length;
++        void active.flush(id).then(() => {
++          active.forget(id, eventCount);
++          if (liveSessions.get(id) === session) liveSessions.delete(id);
++        });
+       });
+ 
+       scoped.effect(() => async () => {
+         await active.dispose();
++        liveSessions.clear();
+         if (capture === active) capture = undefined;
+       });
+ 
+@@ -245,7 +297,7 @@ export function apply(ctx: Context, config: Config = {}): void {
+   let turnCount = 0;
+   let lastContext: Awaited<ReturnType<typeof honcho.fetchContext>> = null;
+ 
+-  if (wantsDirectives) {
++  if (!personal && wantsDirectives) {
+     ctx.systemPrompt.section({ name: "honcho:directives", order: DIRECTIVES_ORDER, text: DIRECTIVES });
+   }
+ 
+@@ -355,7 +407,32 @@ export function apply(ctx: Context, config: Config = {}): void {
+       });
+   }
+ 
++  let profile = "";
++  let nextProfileRefresh = 0;
++  function refreshProfile(agent: AgentLike): void {
++    if (!readPersonal || Date.now() < nextProfileRefresh) return;
++    nextProfileRefresh = Date.now() + 60_000;
++    const session = sessionOf(agent);
++    void honcho.ensureSession(...session).then(() => honcho.fetchContext(...session, undefined)).then(context => {
++      profile = (context?.peerCard ?? []).join("\n").trim().slice(0, 1200);
++    }).catch(() => {});
++  }
++  if (personal && readPersonal) {
++    ctx.systemPrompt.context({
++      name: MEMORY_CONTEXT_NAME,
++      order: MEMORY_ORDER,
++      interpolate: false,
++      text: ({ agent }) => agent && allowsMemory(agent.session.header) && profile
++        ? `[Personal memory profile]\n${profile}`
++        : "",
++    });
++  }
++
+   ctx.on("agent/created", (payload: { agent: AgentLike }): undefined => {
++    if (personal) {
++      if (allowsMemory(payload.agent.session?.header)) refreshProfile(payload.agent);
++      return undefined;
++    }
+     // Emit, not awaited — so this only starts the write that materializes the
+     // session. The read that turn 1 depends on happens in pre-step below.
+     void honcho.ensureSession(...sessionOf(payload.agent)).catch((e: unknown) => {
+@@ -370,6 +447,10 @@ export function apply(ctx: Context, config: Config = {}): void {
+       payload: { agent: AgentLike; messages?: readonly { content?: unknown }[]; step: number },
+       next: () => Promise<PreStepDecision>,
+     ): Promise<PreStepDecision> => {
++      if (personal) {
++        if (allowsMemory(payload.agent.session?.header)) refreshProfile(payload.agent);
++        return next();
++      }
+       const [cwd, id] = sessionOf(payload.agent);
+       if (id) turnSession = id;
+       const query = textOf(payload.messages);
+@@ -432,10 +513,23 @@ export function apply(ctx: Context, config: Config = {}): void {
+ 
+   // ── tools ────────────────────────────────────────────────────────────────
+ 
+-  if (resolved.injection.tools) {
+-    for (const tool of createTools(resolved, honcho)) {
+-      ctx.tools.register(tool);
+-    }
++  if (personal && readPersonal) {
++    const [search] = createTools(resolved, honcho);
++    if (!search) throw new Error("Honcho search definition is missing");
++    const register = ctx.tools.register.bind(ctx.tools) as (
++      definition: typeof search,
++      options: { when(context: { agent: AgentLike }): boolean },
++    ) => void;
++    register({
++      ...search,
++      name: "personal_memory_search",
++      async execute(args, exec) {
++        if (!allowsMemory(exec.agent?.session.header)) throw new Error("Personal memory is disabled");
++        return search.execute(args, exec);
++      },
++    }, { when: ({ agent }) => allowsMemory(agent.session?.header) });
++  } else if (!personal && resolved.injection.tools) {
++    for (const tool of createTools(resolved, honcho)) ctx.tools.register(tool);
+   }
+ 
+   // ── command ──────────────────────────────────────────────────────────────

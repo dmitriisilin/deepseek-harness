@@ -335,10 +335,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void {
-    if (workspaceId === undefined && options === undefined &&
+    if (workspaceId === undefined && (options === undefined || options.agentPreset === 'memory-off') &&
         typeof document !== 'undefined' && document.documentElement.dataset.aiControl === 'red') {
       const signal = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
-      void this.sessions.create().then((sessionId) => {
+      void this.sessions.create(options === undefined ? undefined : { agentPreset: 'memory-off' }).then((sessionId) => {
         if (!signal.aborted) this.replaceMain(sessionId, signal, 'reveal')
       }).catch((error: unknown) => {
         if (!signal.aborted) this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })

@@ -216,7 +216,7 @@ export type SidebarRootInjected = {
    * and open it; without one, inherit the current Session Workspace, then the
    * recent Workspace, or clear into the New Session pure view when none exist.
    */
-  startSession: (workspaceId?: WorkspaceId) => void
+  startSession: (workspaceId?: WorkspaceId, options?: { agentPreset: string }) => void
   /** Toggle the sidebar column through the layout service. */
   toggleSidebar: () => void
   /** Select the global panel addressed by a sidebar row. */
