@@ -9,6 +9,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("profile", type=Path)
 parser.add_argument("identity", choices=("dima", "kate"))
 parser.add_argument("reader", choices=("honcho", "hindsight"))
+parser.add_argument("--channel", choices=("red", "green", "smoke"), default="red")
 parser.add_argument("--honcho", required=True, type=Path)
 parser.add_argument("--hindsight", required=True, type=Path)
 parser.add_argument("--standard-preset", required=True, type=Path)
@@ -18,7 +19,7 @@ args = parser.parse_args()
 
 os.umask(0o077)
 profile = args.profile.resolve(strict=True)
-identity = f"ai-control-red-{args.identity}"
+identity = f"ai-control-{args.channel}-{args.identity}"
 state = profile / "personal-memory"
 state.mkdir(exist_ok=True)
 client_plugins = args.client_plugins.resolve(strict=True)
@@ -30,7 +31,7 @@ for name, path, entry in [
     ("@vectorize-io/hindsight-coding-agents", args.hindsight, "dist/dsh.js"),
 ]:
     target = path.resolve(strict=True)
-    if not (target / entry).is_file():
+    if not (target / entry).is_file() or (name == "@honcho-ai/dsh-honcho" and not (target / "index.js").is_file()):
         parser.error(f"Build artifact missing at {target / entry}")
     link = profile / "node_modules" / name
     link.parent.mkdir(parents=True, exist_ok=True)
